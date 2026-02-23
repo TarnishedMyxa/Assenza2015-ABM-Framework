@@ -1,0 +1,8 @@
+import delimited C:\Users\zeusk\Desktop\Taltech\magistritoo\assenzaStyle\cc_mabm\adata\gdp_hpfilter_lambda_1519.55.csv, clear
+gen daily_date = date(observation_date, "YMD")
+gen qdate = yq(year(daily_date), quarter(daily_date))
+format qdate %tq
+tsset qdate
+
+
+ac cycle, lags(20) title("Autocorrelation: GDP Cycle")

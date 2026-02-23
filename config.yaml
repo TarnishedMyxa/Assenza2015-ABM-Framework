@@ -1,0 +1,47 @@
+# Simulation Orchestration
+simulation:
+  periods: 3500                 # T: Number of periods
+  num_workers: 3000            # H: Number of workers
+  num_c_firms: 200             # Fc: Number of C-firms
+  num_k_firms: 50              # Fk: Number of K-firms
+
+# Household Parameters
+households:
+  income_memory_weight: 0.96   # ξ (xi): Memory parameter for human wealth
+  wealth_consumption_ratio: 0.05 # χ (chi): Fraction of wealth for consumption
+  initial_assets: 2.0          # Eh1: Initial households' personal assets
+  search_intensity:
+    labor: 5                   # Ze: Firms visited by unemployed worker
+    consumer: 2                # Zc: C-firms visited by a consumer
+
+# Firm Parameters (General and Production)
+firms:
+  dividend_payout_ratio: 0.2   # τ (tau): Dividend payout ratio
+  quantity_adjustment: 0.9     # ρ (rho): Quantity adjustment parameter
+  price_adjustment_max: 0.1    # η (eta): Upper bound of U(0, 0.1)
+  wage_rate: 1.0               # w: Fixed wage
+  initial_liquidity: 10.0      # Df1: Initial liquidity of firms
+
+  c_sector:
+    initial_capital: 10.0      # K1: Initial capital
+    initial_production: 5.0    # Yc1: Initial production
+    capital_productivity: 0.333 # κ (kappa): 1/3
+    investment_probability: 0.25 # γ (gamma): Probability of investing
+    capital_depreciation: 0.02 # δ (delta): Depreciation of capital
+    investment_memory: 0.5     # ν (nu): Memory parameter for investment
+    desired_utilization: 0.85  # ω (omega): Desired capacity utilization
+    search_k_firms: 2          # Zk: K-firms visited by a C-firm
+    initial_price: 5.5         # initial price of consumption good
+
+  k_sector:
+    initial_production: 3.0    # Yk1: Initial production
+    labor_productivity: 0.5    # α (alpha): Productivity of labor
+    initial_price: 1.2         # initial price of capital good
+
+# Financial Sector Parameters
+bank:
+  initial_equity: 3000.0       # Eb1: Initial equity of the bank
+  risk_free_rate: 0.01         # r: Risk free interest rate
+  markup: 1.2                  # µ (mu): Bank’s gross mark-up
+  loss_parameter: 0.002        # ζ (zeta): bank’s loss parameter
+  debt_installment_rate: 0.05  # θ (theta): Installment on Debt (repayment)
