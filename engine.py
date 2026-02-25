@@ -219,6 +219,9 @@ class SimulationEngine:
                 h.wealth += self.wage_rate - h.spent_amount
                 total_wage += self.wage_rate
                 total_spent += h.spent_amount
+            else:
+                h.wealth -= h.spent_amount
+                total_spent += h.spent_amount
 
         #self.ledger.add_entry(Entry("Wages_workers", total_wage, "","w"))
         #self.ledger.add_entry(Entry("Consum_worker", total_spent, "w", "cf"))

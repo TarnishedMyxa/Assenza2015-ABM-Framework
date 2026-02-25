@@ -51,10 +51,12 @@ class BaseFirm:
         self.owner.wealth += divs
 
 
-    def hire(self, worker, wage):
+    def hire(self, worker):
         """Hires a worker and updates labor demand."""
         self.labour_demand -= 1
         self.staff.append(worker)
+        worker.employed = True
+        worker.employer = self
 
 
     def get_adjustment_shock(self):
