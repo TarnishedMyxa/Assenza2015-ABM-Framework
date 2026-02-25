@@ -179,7 +179,7 @@ class ConsumptionFirm(BaseFirm):
             self.planned_production = self.production - self.rho * self.inventory
         elif self.inventory <= 0 and self.price > market_avg_price:
             # Excess Demand: Increase production
-            self.planned_production = self.production + self.rho * self.inventory
+            self.planned_production = self.production
 
         if self.first_step:
             self.planned_production= self.initial_production
