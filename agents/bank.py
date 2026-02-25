@@ -26,19 +26,6 @@ class Bank:
         self.c_model = None
         self.k_model = None
 
-
-    def calculate_leverage(self, L_prev, E_prev, F_current):
-        """
-        Implements Equation 8.1:
-        lambda = (L_t-1 + F_t) / (E_t-1 + L_t-1 + F_t)
-        """
-        total_assets = E_prev + L_prev + F_current
-        if total_assets <= 0:
-            return 0.9999  # Highly fragile if no assets
-
-        leverage = (L_prev + F_current) / total_assets
-        return min(leverage, 0.9999)  # Range [0, 1)
-
     def estimate_logistic_failure_prob(self):
         """
         Estimates the logistic relationship phi = f(lambda).

@@ -81,7 +81,8 @@ class BaseFirm:
             amount=self.theta * l.amount
             l.amount -= amount
             self.liquidity -= amount
-            self.intresses+=amount
+            #self.intresses+=amount  # those are not intresses CHANGE THIS LATER
+            self.debt -= amount
 
     def fire_workers(self, amount):
 
@@ -110,7 +111,7 @@ class BaseFirm:
         if denominator <= 0:
             return 0.9999  # in theory this should not happen since equity negative triggers bankruptcy before
 
-        leverage =  (self.equity + self.debt) / denominator
+        leverage =  (self.debt + self.debt) / denominator
         return min(leverage, 0.9999)
 
     def process_bankruptcy(self):
@@ -118,8 +119,6 @@ class BaseFirm:
         self.owner.wealth -= self.equity
         self.liquidity -= self.equity
         self.equity = 0
-
-
 
 class ConsumptionFirm(BaseFirm):
     """
