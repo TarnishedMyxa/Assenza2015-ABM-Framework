@@ -1,11 +1,12 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from collections import deque
+import pickle
 
 
 class Bank:
     def __init__(self, initial_equity, r_policy=0.01, markup=1.1,
-                 zeta=0.002, theta=0.05, window_c=100, window_k=200):
+                 zeta=0.002, theta=0.05, window_c=1000, window_k=1000):
         """
         r_policy: The risk-free rate 'r' (instrument of monetary policy)
         markup: 'mu' (arbitrage multiplier > 1)
@@ -26,7 +27,7 @@ class Bank:
         self.c_model = None
         self.k_model = None
 
-    def estimate_logistic_failure_prob(self):
+    def estimate_logistic_failure_prob(self, save, use):
         """
         Estimates the logistic relationship phi = f(lambda).
         Re-estimated each period by discarding the oldest and incorporating the newest.
@@ -34,6 +35,16 @@ class Bank:
             List of last N periods of data as lists of tuple with labda value and bankruptcy boolean.
 
         """
+
+        if not(self.c_model is None and self.k_model is None):
+            return
+
+        if use:
+            with open("ModelC.pkl", "rb") as f:
+                self.c_model = pickle.load(f)
+            with open("ModelK.pkl", "rb") as f:
+                self.k_model = pickle.load(f)
+            return
 
         # Fit models for K firms first
         flat_history = [item for sublist in self.k_history for item in sublist]
@@ -48,6 +59,9 @@ class Bank:
                 model = LogisticRegression(solver='liblinear')
                 model.fit(X, y)
                 self.k_model = model
+                if save:
+                    with open("ModelC.pkl", "wb") as f:
+                        pickle.dump(model, f)
 
         # Fit models for C firms next
         flat_history = [item for sublist in self.c_history for item in sublist]
@@ -61,13 +75,17 @@ class Bank:
                 model = LogisticRegression(solver='liblinear')
                 model.fit(X, y)
                 self.c_model = model
+                if save:
+                    with open("ModelK.pkl", "wb") as f:
+                        pickle.dump(model, f)
+
 
     def get_bankruptcy_prob(self, leverage, firm_type='C'):
         """Retrieves phi_i,t = f(lambda_i,t)"""
         model = self.c_model if firm_type == 'C' else self.k_model
 
         if model is None:
-            return 0.02  # Default small risk before models are trained
+            return 0.04  # Default small risk before models are trained
 
         # Predict probability of class 1 (Bankruptcy)
         return model.predict_proba([[leverage]])[0][1]

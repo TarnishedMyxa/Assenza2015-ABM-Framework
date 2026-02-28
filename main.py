@@ -25,18 +25,22 @@ def main():
 
 if __name__ == "__main__":
     GDP=[]
-    for i in range(20):
-        print(f"Running simulation {(i+1)/0.2}%...")
+    N=5
+    for i in range(N):
+        print(f"Running simulation {(i+1)/N*100}%...")
+        """
         try:
             data=main()
         except:
             print("Error in simulation run, skipping...")
             continue
         GDP.append(data)
-
+        """
+        data=main()
+        GDP.append(data)
     data = np.array(GDP, dtype=float)
 
-    burn_in=10
+    burn_in=1
     # Slice for "Post-Initialization" analysis
     data_subset = data[:, burn_in:]
     x = np.arange(burn_in, burn_in + data_subset.shape[1])

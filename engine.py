@@ -2,6 +2,7 @@ import random
 import numpy as np
 from agents import ConsumptionFirm, CapitalFirm, Bank, Worker, Capitalist
 from accounting import Ledger, Entry
+import math
 
 
 class SimulationEngine:
@@ -140,7 +141,7 @@ class SimulationEngine:
             kf.adjust_price_and_output(self.avg_p_k)
 
         # Banks estimate bankruptcy predictions for leverage levels and prices
-        self.bank.estimate_logistic_failure_prob()
+        self.bank.estimate_logistic_failure_prob(self.config["simulation"]["save_model"], self.config["simulation"]["use_saved_model"])
 
         # 1. FIRMS' PLANNING: Decide production
         for f in self.c_firms + self.k_firms:
@@ -194,7 +195,7 @@ class SimulationEngine:
             # Pick firm with highest labor demand
             best_employer = max(potential_employers, key=lambda f: f.labour_demand)
             if best_employer.labour_demand > 0:
-                best_employer.hire(h, self.wage_rate)
+                best_employer.hire(h)
 
     def _resolve_goods_market(self):
         """Households visit Zc firms to consume."""
@@ -259,6 +260,7 @@ class SimulationEngine:
 
 
         bankrupt=[]
+        history_for_bank=[]
         # Dividends tau
         total_divs=0
         for f in self.c_firms:
@@ -269,27 +271,37 @@ class SimulationEngine:
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
+                history_for_bank.append((f.lmbda, 1))
             else:
                 dividents=f.dividends()
                 total_divs += dividents
                 f.payout_dividents()
+                history_for_bank.append((f.lmbda, 0))
+
+        cleaned = [tup for tup in history_for_bank if not any(math.isnan(val) for val in tup)]
+        self.bank.c_history.append(cleaned)
 
         #self.ledger.add_entry(Entry("Dividents_cf", total_divs, "cf", "c"))
 
+        history_for_bank = []
         total_divs = 0
         for f in self.k_firms:
             f.depreciate_capital()
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
+                history_for_bank.append((f.lmbda, 1))
             else:
                 dividents = f.dividends()
                 total_divs += dividents
                 f.payout_dividents()
+                history_for_bank.append((f.lmbda, 0))
+
+        cleaned = [tup for tup in history_for_bank if not any(math.isnan(val) for val in tup)]
+        self.bank.k_history.append(cleaned)
 
         for f in bankrupt:
             f.process_bankruptcy()
-
 
         #self.ledger.add_entry(Entry("Dividents_kf", total_divs, "kf", "c"))
 

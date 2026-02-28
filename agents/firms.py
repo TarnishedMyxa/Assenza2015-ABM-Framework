@@ -35,6 +35,7 @@ class BaseFirm:
         self.labour_demand = 0.0
         self.staff = []
         self.first_step=True
+        self.lmbda=0
 
     def dividends(self):
 
@@ -112,7 +113,8 @@ class BaseFirm:
             return 0.9999  # in theory this should not happen since equity negative triggers bankruptcy before
 
         leverage =  (self.debt + self.debt) / denominator
-        return min(leverage, 0.9999)
+        self.lmbda=min(leverage, 0.9999)
+        return self.lmbda
 
     def process_bankruptcy(self):
         self.loans=[]
@@ -192,7 +194,7 @@ class ConsumptionFirm(BaseFirm):
 
         if self.kappa * self.capital >= self.planned_production:
             self.omega=self.planned_production / (self.kappa * self.desired_capital)
-            self.omega = min(self.omega, 1.0)
+            self.omega = max(min(self.omega, 1.0), 0.1)
 
             desired_laboour = self.omega * self.desired_capital *  self.kappa/self.labour_prod
             current_labour = len(self.staff)
