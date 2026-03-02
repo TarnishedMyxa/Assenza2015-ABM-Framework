@@ -60,6 +60,10 @@ class Household:
             remaining_budget -= cost
             self.spent_amount += cost
 
+        if remaining_budget > 0:
+            queue_qty=remaining_budget / firm.price
+            firm.queue+=queue_qty
+
         # 4. Update Wealth
         # D_c,t = D_c,t-1 + Y_c,t - C_c,t
         # Any unspent budget becomes involuntary savings

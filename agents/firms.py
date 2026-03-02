@@ -23,6 +23,7 @@ class BaseFirm:
         self.production = 0.0  # Y_t
         self.sales = 0.0  # Q_t
         self.inventory = 0.0  # Delta (Unsold goods)
+        self.queue = 0.0  # Q_d (Demand that couldn't be fulfilled)
         self.expected_demand = 0.0  # Y_e
         self.intresses=0
 
@@ -171,7 +172,7 @@ class ConsumptionFirm(BaseFirm):
         # 1. Price Decision
         if self.inventory > 0 and self.price > market_avg_price:
             self.price *= (1 - eta)
-        elif self.inventory <= 0 and self.price <= market_avg_price:
+        elif self.inventory - self.queue <= 0 and self.price <= market_avg_price:
             self.price *= (1 + eta)
 
         # 2. Quantity Decision (Desired Production)
@@ -179,14 +180,15 @@ class ConsumptionFirm(BaseFirm):
         if self.inventory > 0 and self.price < market_avg_price:
             # Excess Supply: Cut production
             self.planned_production = self.production - self.rho * self.inventory
-        elif self.inventory <= 0 and self.price > market_avg_price:
+        elif self.inventory - self.queue <= 0 and self.price > market_avg_price:
             # Excess Demand: Increase production
-            self.planned_production = self.production
+            self.planned_production = self.production - self.rho * (self.inventory - self.queue)
 
         if self.first_step:
             self.planned_production= self.initial_production
             self.first_step = False
         self.expected_demand = self.planned_production
+        self.queue=0
 
     def calculate_labor_demand(self):
         """Calculates labor demand based on planned production and capital."""
@@ -194,7 +196,7 @@ class ConsumptionFirm(BaseFirm):
 
         if self.kappa * self.capital >= self.planned_production:
             self.omega=self.planned_production / (self.kappa * self.desired_capital)
-            self.omega = max(min(self.omega, 1.0), 0.1)
+            self.omega = max(min(self.omega, 1.0), 0.02)  # this holds the utilization between 2% and 100%
 
             desired_laboour = self.omega * self.desired_capital *  self.kappa/self.labour_prod
             current_labour = len(self.staff)
@@ -280,6 +282,10 @@ class ConsumptionFirm(BaseFirm):
             to_buy -= actual_qty
             costs += cost    # in theory here can be implemented FIFO, LIFO, avg cost methods but i will just recalc the book value somewhere else with avg price on the market
 
+        if to_buy > 0:
+            queue_qty = to_buy / firm.price
+            firm.queue += queue_qty
+
         self.capital += self.planned_investment - to_buy
         self.liquidity -= costs
         self.invested=costs
@@ -354,20 +360,22 @@ class CapitalFirm(BaseFirm):
 
         if self.inventory > 0 and self.price > market_avg_price:
             self.price *= (1 - eta)
-        elif self.inventory <= 0 and self.price <= market_avg_price:
+        elif self.inventory - self.queue <= 0 and self.price <= market_avg_price:
             self.price *= (1 + eta)
 
         # Quantity Adjustment
         if self.inventory > 0:
             self.planned_production = max(0, self.production - self.rho * self.inventory)
         else:
-            self.planned_production = self.production + self.rho * abs(self.inventory)
+            self.planned_production = self.production + self.rho * abs(self.inventory- self.queue)
+
 
         if self.first_step:
             self.planned_production= self.initial_production
             self.first_step = False
 
         self.planned_production = max(self.planned_production, 1.0)
+        self.queue=0
 
     def calculate_labor_demand(self):
 

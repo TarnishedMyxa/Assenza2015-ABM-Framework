@@ -25,7 +25,7 @@ def main():
 
 if __name__ == "__main__":
     GDP=[]
-    N=5
+    N=10
     for i in range(N):
         print(f"Running simulation {(i+1)/N*100}%...")
         """
