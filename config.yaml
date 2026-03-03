@@ -1,11 +1,10 @@
 # Simulation Orchestration
 simulation:
   periods: 1000                # T: Number of periods
-  num_workers: 300            # H: Number of workers
-  num_c_firms: 20             # Fc: Number of C-firms
-  num_k_firms: 10              # Fk: Number of K-firms
-  save_model: 0
-  use_saved_model: 1
+  num_workers: 3000            # H: Number of workers
+  num_c_firms: 200            # Fc: Number of C-firms
+  num_k_firms: 50             # Fk: Number of K-firms
+
 
 # Household Parameters
 households:

@@ -1,7 +1,8 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from collections import deque
-import pickle
+import math
+from itertools import chain
 
 
 class Bank:
@@ -27,7 +28,13 @@ class Bank:
         self.c_model = None
         self.k_model = None
 
-    def estimate_logistic_failure_prob(self, save, use):
+        self.c_model_coefficient = None
+        self.c_model_intercept = None
+
+        self.k_model_coefficient = None
+        self.k_model_intercept = None
+
+    def estimate_logistic_failure_prob(self):
         """
         Estimates the logistic relationship phi = f(lambda).
         Re-estimated each period by discarding the oldest and incorporating the newest.
@@ -35,49 +42,36 @@ class Bank:
             List of last N periods of data as lists of tuple with labda value and bankruptcy boolean.
 
         """
+        if self.k_model is None:
+            self.k_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=100)
+        if self.c_model is None:
+            self.c_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=100)
 
-        if not(self.c_model is None and self.k_model is None):
-            return
+        def update_and_fit(model, history, firm_type):
+            if not history or len(history) < 20:
+                return
 
-        if use:
-            with open("ModelC.pkl", "rb") as f:
-                self.c_model = pickle.load(f)
-            with open("ModelK.pkl", "rb") as f:
-                self.k_model = pickle.load(f)
-            return
+            data = np.array(history)
 
-        # Fit models for K firms first
-        flat_history = [item for sublist in self.k_history for item in sublist]
+            X = data[:, 0].reshape(-1, 1)
+            y = data[:, 1]
 
-        data = np.array(flat_history)
-        if len(data) >= 20:  # Ensure minimum data points for fit
-            X = data[:, 0].reshape(-1, 1)  # Leverage (lambda)
-            y = data[:, 1]  # Status (1=Bankrupt, 0=Survived)
-
-            # Check if we have both classes to train
-            if len(np.unique(y)) > 1:
-                model = LogisticRegression(solver='liblinear')
+            y_min, y_max = y.min(), y.max()
+            if y_min != y_max:
                 model.fit(X, y)
-                self.k_model = model
-                if save:
-                    with open("ModelC.pkl", "wb") as f:
-                        pickle.dump(model, f)
 
-        # Fit models for C firms next
-        flat_history = [item for sublist in self.c_history for item in sublist]
-        data = np.array(flat_history)
-        if len(data) >= 20:  # Ensure minimum data points for fit
-            X = data[:, 0].reshape(-1, 1)  # Leverage (lambda)
-            y = data[:, 1]  # Status (1=Bankrupt, 0=Survived)
+                coef = model.coef_[0][0]
+                intercept = model.intercept_[0]
 
-            # Check if we have both classes to train
-            if len(np.unique(y)) > 1:
-                model = LogisticRegression(solver='liblinear')
-                model.fit(X, y)
-                self.c_model = model
-                if save:
-                    with open("ModelK.pkl", "wb") as f:
-                        pickle.dump(model, f)
+                if firm_type == 'K':
+                    self.k_model_coefficient = coef
+                    self.k_model_intercept = intercept
+                else:
+                    self.c_model_coefficient = coef
+                    self.c_model_intercept = intercept
+
+        update_and_fit(self.k_model, self.k_history, 'K')
+        update_and_fit(self.c_model, self.c_history, 'C')
 
 
     def get_bankruptcy_prob(self, leverage, firm_type='C'):
@@ -87,8 +81,20 @@ class Bank:
         if model is None:
             return 0.04  # Default small risk before models are trained
 
-        # Predict probability of class 1 (Bankruptcy)
-        return model.predict_proba([[leverage]])[0][1]
+        if firm_type == 'C':
+            if self.c_model_coefficient is None or self.c_model_intercept is None:
+                return 0.04  # Default small risk before C model is trained
+            # Use C model parameters to calculate probability
+            z = self.c_model_coefficient * leverage + self.c_model_intercept
+            phi = 1 / (1 + np.exp(-z))
+            return phi
+        else:
+            if self.k_model_coefficient is None or self.k_model_intercept is None:
+                return 0.04  # Default small risk before K model is trained
+            # Use K model parameters to calculate probability
+            z = self.k_model_coefficient * leverage + self.k_model_intercept
+            phi = 1 / (1 + np.exp(-z))
+            return phi
 
     def set_interest_rate(self, leverage, firm_type='C'):
         """
@@ -100,14 +106,13 @@ class Bank:
         phi = self.get_bankruptcy_prob(leverage, firm_type)
 
         # Avoid division by zero: T = 1 / phi (Eq 8.4)
-        phi = max(phi, 0.000001)
+        phi = max(phi, 0.001)
         expected_T = 1 / phi
 
         xi_T = (1 - (1 - self.theta) ** (expected_T + 1)) / self.theta
 
-        r=self.mu *( (1+self.r/self.theta)/xi_T - self.theta  )  # Eq 8.9, 8.10
+        r=self.mu *( (1+self.r/self.theta)/xi_T - self.theta  )
 
-        # Cost channel: Ensure rate isn't lower than the policy rate
         return max(r, self.r), phi
 
     def get_credit_limit(self, current_debt, phi):

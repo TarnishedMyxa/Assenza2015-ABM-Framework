@@ -53,14 +53,6 @@ class BaseFirm:
         self.owner.wealth += divs
 
 
-    def hire(self, worker):
-        """Hires a worker and updates labor demand."""
-        self.labour_demand -= 1
-        self.staff.append(worker)
-        worker.employed = True
-        worker.employer = self
-
-
     def get_adjustment_shock(self):
         """Returns a random price adjustment factor U(0, 0.1)."""
         return random.uniform(0, 0.1)
@@ -295,16 +287,6 @@ class ConsumptionFirm(BaseFirm):
         """Executes production limited by capital capacity."""
         self.production = min(self.capital * self.kappa, self.labour_prod * len(self.staff) )
         self.inventory = self.production   # Notice that if there was any inventory before it is gone now
-
-    def sell(self, amount):
-        """Handles sales to households and updates inventory."""
-        actual_sold = min(amount, self.inventory)
-        if actual_sold < 0:
-            pass
-        self.sales += actual_sold
-        self.inventory -= actual_sold
-        self.liquidity += actual_sold * self.price
-        return actual_sold
 
     def depreciated_capital_update(self):
         """Updates capital stock: K_t+1 = (1 - delta*util)K + I """
