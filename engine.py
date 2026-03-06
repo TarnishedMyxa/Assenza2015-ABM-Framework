@@ -2,8 +2,10 @@ import random
 import numpy as np
 from agents import ConsumptionFirm, CapitalFirm, Bank, Worker, Capitalist
 from accounting import Ledger, Entry
+from mysql_connector.mnemosyne import *
 import math
 import time
+import os
 
 
 class SimulationEngine:
@@ -360,6 +362,93 @@ class SimulationEngine:
             f.process_bankruptcy()
 
         #self.ledger.add_entry(Entry("Dividents_kf", total_divs, "kf", "c"))
+
+def send_config_to_db(db_creds, config):
+    cnf={
+        "periods": config['simulation']['periods'],
+        "num_workers": config['simulation']['num_workers'],
+        "num_c_firms": config['simulation']['num_c_firms'],
+        "num_k_firms": config['simulation']['num_k_firms'],
+        "income_memory_weight": config['households']['income_memory_weight'],
+        "wealth_consumption_ratio": config['households']['wealth_consumption_ratio'],
+        "initial_assets": config['households']['initial_assets'],
+        "si_labor": config['households']['search_intensity']['labor'],
+        "si_consumer": config['households']['search_intensity']['consumer'],
+        "dividend_payout_ratio": config['firms']['dividend_payout_ratio'],
+        "qty_adjustment": config['firms']['quantity_adjustment'],
+        "p_adjustment_max": config['firms']['price_adjustment_max'],
+        "wage_rate": config['firms']['wage_rate'],
+        "init_m": config['firms']['c_sector']['initial_capital'],
+        "init_capital": config['firms']['c_sector']['initial_capital'],
+        "c_init_production": config['firms']['c_sector']['initial_production'],
+        "c_productivity": config['firms']['c_sector']['capital_productivity'],
+        "invest_prob": config['firms']['c_sector']['investment_probability'],
+        "c_depreciation": config['firms']['c_sector']['capital_depreciation'],
+        "invest_memory": config['firms']['c_sector']['investment_memory'],
+        "desired_util": config['firms']['c_sector']['desired_utilization'],
+        "search_k": config['firms']['c_sector']['search_k_firms'],
+        "c_init_p": config['firms']['c_sector']['initial_price'],
+        "k_initial_production": config['firms']['k_sector']['initial_production'],
+        "l_productivity": config['firms']['k_sector']['labor_productivity'],
+        "k_init_p": config['firms']['k_sector']['initial_price'],
+        "b_init_e": config['bank']['initial_equity'],
+        "risk_free_rate": config['bank']['risk_free_rate'],
+        "markup": config['bank']['markup'],
+        "loss_param": config['bank']['loss_parameter'],
+        "debt_installment_rate": config['bank']['debt_installment_rate']
+    }
+    cnf_id=send_config_data(db_creds, cnf)
+    return cnf_id
+
+def fetch_config_from_db(db_creds, config_id):
+    data=fetch_config_data(db_creds, config_id)
+
+    config={
+        'simulation': {
+            'periods': data['periods'],
+            'num_workers': data['num_workers'],
+            'num_c_firms': data['num_c_firms'],
+            'num_k_firms': data['num_k_firms']
+        },
+        'households': {
+            'income_memory_weight': data['income_memory_weight'],
+            'wealth_consumption_ratio': data['wealth_consumption_ratio'],
+            'initial_assets': data['initial_assets'],
+            'search_intensity': {
+                'labor': data['si_labor'],
+                'consumer': data['si_consumer']
+            }
+        },
+        'firms': {
+            'dividend_payout_ratio': data['dividend_payout_ratio'],
+            'quantity_adjustment': data['qty_adjustment'],
+            'price_adjustment_max': data['p_adjustment_max'],
+            'wage_rate': data['wage_rate'],
+            'c_sector': {
+                'initial_capital': data['init_capital'],
+                'initial_production': data['c_init_production'],
+                'capital_productivity': data['c_productivity'],
+                'investment_probability': data['invest_prob'],
+                'capital_depreciation': data['c_depreciation'],
+                'investment_memory': data['invest_memory'],
+                'desired_utilization': data['desired_util'],
+                'search_k_firms': data['search_k']
+            },
+            'k_sector': {
+                'initial_production': data['k_initial_production'],
+                'labor_productivity': data['l_productivity'],
+                'initial_price': data['k_init_p']
+            }
+        },
+        'bank': {
+            'initial_equity': data['b_init_e'],
+            'risk_free_rate': data['risk_free_rate'],
+            'markup': data['markup'],
+            'loss_parameter': data['loss_param'],
+            'debt_installment_rate': data['debt_installment_rate']
+        }
+    }
+    return config
 
 if __name__=="__main__":
     pass

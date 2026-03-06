@@ -38,6 +38,19 @@ class BaseFirm:
         self.first_step=True
         self.lmbda=0
 
+    def get_all_loans(self):
+        lns=[]
+        for i in self.loans:
+            lns.append(i.get_json())
+        return lns
+
+    def get_staff(self):
+        stf=[]
+        for i in self.staff:
+            stf.append(i.id)
+        return stf
+
+
     def dividends(self):
 
         self.profit = self.sales * self.price - self.intresses
@@ -134,7 +147,6 @@ class ConsumptionFirm(BaseFirm):
         self.capital_avg = initial_capital  # Moving average of K
         self.invested=0
 
-        self.uuid = str(uuid.uuid4())
         self.theta=theta
 
         self.labour_prod=labour_prod
@@ -146,7 +158,6 @@ class ConsumptionFirm(BaseFirm):
         self.gamma = investment_prob
         self.nu = investment_memory
         self.omega = desired_utilization
-        self.old_loans=0
 
         # Temporary State for the Step
         self.planned_production = 0.0
@@ -154,6 +165,7 @@ class ConsumptionFirm(BaseFirm):
         self.wage_bill = 0.0
         self.investment_cost = 0.0
         self.capital_book=self.capital * 1.2
+        self.desired_capital=0
 
     def adjust_price_and_output(self, market_avg_price):
         """
@@ -330,9 +342,10 @@ class CapitalFirm(BaseFirm):
 
         # Injected Parameter
         self.alpha = labor_productivity  # alpha
-        self.uuid = str(uuid.uuid4())
         self.theta=theta
         self.delta=delta
+
+        self.wage_bill=0
 
     def adjust_price_and_output(self, market_avg_price):
         """
@@ -416,6 +429,12 @@ class loan:
     def __init__(self, amount, rate):
         self.amount = amount
         self.rate = rate
+
+    def get_json(self):
+        return {
+            "amount": self.amount,
+            "rate": self.rate
+        }
 
 
 if __name__=="__main__":
