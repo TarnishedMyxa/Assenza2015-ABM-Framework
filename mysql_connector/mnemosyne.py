@@ -97,3 +97,30 @@ def fetch_config_data(db_config, config_id):
     except pymysql.MySQLError as e:
         print(f"Error while connecting to MySQL: {e}")  # Debug
         raise
+
+def send_run_data(db_config, run_data):
+    try:
+        connection = pymysql.connect(
+            host=db_config['host'],
+            port=db_config['port'],
+            user=db_config['user'],
+            password=db_config['password'],
+            database=db_config['database'],
+            charset='utf8mb4'
+        )
+
+        columns = ["config", "run_id", "start_seed", "name", "version"]
+        #start_seed is bigint(20) in mysql
+        placeholders = ", ".join(["%s"] * len(columns))
+        column_names = ", ".join(columns)
+
+        values = [run_data.get(col) for col in columns]
+
+        with connection.cursor() as cursor:
+            query = f"INSERT INTO runs ({column_names}) VALUES ({placeholders})"
+            cursor.execute(query, values)
+            connection.commit()
+
+    except pymysql.MySQLError as e:
+        print(f"Error while connecting to MySQL: {e}")
+        raise

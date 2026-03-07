@@ -4,12 +4,57 @@ from agents import ConsumptionFirm, CapitalFirm, Bank, Worker, Capitalist
 from accounting import Ledger, Entry
 from mysql_connector.mnemosyne import *
 import math
-import time
+import yaml
 import os
+from dotenv import load_dotenv
 
+
+class runManager:
+    def __init__(self, settings):
+        self.settings = settings
+        if self.settings["CONFIG"] == "DB":
+            load_dotenv()
+            self.db_creds = {
+                'host': os.getenv("host"),
+                'port': int(os.getenv("port")),
+                'user': os.getenv("user"),
+                'password': os.getenv("password"),
+                'database': os.getenv("database")
+            }
+            self.config = fetch_config_from_db(self.db_creds, self.settings["db_config_id"])
+            print(f"Config fetched from DB with ID: {self.settings['db_config_id']}")
+        else:
+            self.db_creds=None
+            with open(self.settings["yaml_config_path"], "r", encoding="utf-8") as f:
+                self.config = yaml.safe_load(f)
+                print("YAML CONFIG LOADED")
+                if self.settings["create_new_config_in_db"]:
+                    cnf_id = send_config_to_db(self.db_creds, self.config)
+                    self.config['config_id'] = cnf_id
+                    print(f"Config sent to DB with ID: {cnf_id}")
+
+        return self
+
+    def create_new_run(self, name=None, start_seed=None ):
+        if start_seed is None:
+            start_seed = random.randint(0, 1e10)
+
+        if self.config["config_id"] is not None:
+            run_data = {
+                "config": self.config["config_id"],
+                "run_id": str(start_seed),
+                "name": name,
+                "version": "1.0",
+                "start_seed": start_seed
+            }
+            send_run_data(run_data)
+
+        return SimulationEngine(self.config, name=name, start_seed=start_seed)
 
 class SimulationEngine:
-    def __init__(self, config):
+    def __init__(self, config, name=None, start_seed=None):
+        self.name = name
+        self.start_seed = start_seed
         self.config = config
         self.current_step = 0
         self.ze = self.config['households']['search_intensity']['labor']

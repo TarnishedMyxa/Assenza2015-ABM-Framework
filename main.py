@@ -4,25 +4,22 @@ import time
 from dotenv import load_dotenv
 import os
 
+
+#SETTINGS
 CONFIG="DB"  # Could be "YAML" or "DB",
 yaml_config_path = "config.yaml"  # Path to YAML config file if using YAML
+create_new_config_in_db = True  # Whether to create a new config in the database or fetch an existing one
 db_config_id = 2  # ID of the config in the database if using DB
 
 
+def main(settings):
+
+    rm = runManager(settings) # manager sets up config and database connection, and manages runs
+
+    run=rm.create_new_run()
 
 
-def main(db_creds):
-
-    if CONFIG == "DB":
-        config = fetch_config_from_db(db_creds, db_config_id)
-        cnf_id = config["config_id"]
-    else:
-        with open(yaml_config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-            cnf_id=send_config_to_db(db_creds, config)
-            config['config_id']=cnf_id
-
-    return
+    return 0
 
     # 2. Initialize the Engine (which creates all agents)
     economy = SimulationEngine(config)
@@ -35,17 +32,13 @@ def main(db_creds):
 
 
 if __name__ == "__main__":
-    if CONFIG == "DB":
-        load_dotenv()
-        db_creds = {
-            'host': os.getenv("host"),
-            'port': int(os.getenv("port")),
-            'user': os.getenv("user"),
-            'password': os.getenv("password"),
-            'database': os.getenv("database")
-        }
-    else:
-        db_creds=None
+
+    settings={
+        "CONFIG": CONFIG,
+        "yaml_config_path": yaml_config_path,
+        "db_config_id": db_config_id,
+        "create_new_config_in_db": create_new_config_in_db
+    }
     N=1
     for i in range(N):
-        data=main(db_creds)
+        data=main(settings)
