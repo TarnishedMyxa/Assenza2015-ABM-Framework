@@ -22,6 +22,7 @@ class runManager:
                 'database': os.getenv("database")
             }
             self.config = fetch_config_from_db(self.db_creds, self.settings["db_config_id"])
+            self.config['config_id'] = self.settings["db_config_id"]
             print(f"Config fetched from DB with ID: {self.settings['db_config_id']}")
         else:
             self.db_creds=None
@@ -33,26 +34,40 @@ class runManager:
                     self.config['config_id'] = cnf_id
                     print(f"Config sent to DB with ID: {cnf_id}")
 
-        return self
-
     def create_new_run(self, name=None, start_seed=None ):
         if start_seed is None:
             start_seed = random.randint(0, 1e10)
 
+
+        runid = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890', k=15))
+
         if self.config["config_id"] is not None:
             run_data = {
                 "config": self.config["config_id"],
-                "run_id": str(start_seed),
+                "run_id": runid,
                 "name": name,
                 "version": "1.0",
                 "start_seed": start_seed
             }
-            send_run_data(run_data)
+            send_run_data(self.db_creds, run_data)
 
-        return SimulationEngine(self.config, name=name, start_seed=start_seed)
+        run=SimulationEngine(self.config, name=name, start_seed=start_seed, runid=runid)
+
+        populate_run_data(self.db_creds, run)
+
+        return run
+
+    def run_steps(self, run, steps=1):
+        for _ in range(steps):
+            time_processing=run.run_step()
+            #update_run_data(self.db_creds, run, time_processing)
+
+    def _drop_all_runs_from_db(self):
+        drop_all_runs(self.db_creds)
 
 class SimulationEngine:
-    def __init__(self, config, name=None, start_seed=None):
+    def __init__(self, config, name=None, start_seed=None, runid=None):
+        self.runid = runid
         self.name = name
         self.start_seed = start_seed
         self.config = config
@@ -469,7 +484,9 @@ def fetch_config_from_db(db_creds, config_id):
             'quantity_adjustment': data['qty_adjustment'],
             'price_adjustment_max': data['p_adjustment_max'],
             'wage_rate': data['wage_rate'],
+            "initial_liquidity": data['init_m'],
             'c_sector': {
+                "initial_price": data['c_init_p'],
                 'initial_capital': data['init_capital'],
                 'initial_production': data['c_init_production'],
                 'capital_productivity': data['c_productivity'],
@@ -482,7 +499,7 @@ def fetch_config_from_db(db_creds, config_id):
             'k_sector': {
                 'initial_production': data['k_initial_production'],
                 'labor_productivity': data['l_productivity'],
-                'initial_price': data['k_init_p']
+                'initial_price': data['k_init_p'],
             }
         },
         'bank': {

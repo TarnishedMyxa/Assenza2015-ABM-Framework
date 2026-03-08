@@ -16,8 +16,11 @@ def main(settings):
 
     rm = runManager(settings) # manager sets up config and database connection, and manages runs
 
+    rm._drop_all_runs_from_db()
+
     run=rm.create_new_run()
 
+    run.run_steps(run, 100)
 
     return 0
 
