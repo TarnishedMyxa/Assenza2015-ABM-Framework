@@ -7,6 +7,7 @@ import math
 import yaml
 import os
 from dotenv import load_dotenv
+import pickle
 
 
 class runManager:
@@ -58,9 +59,130 @@ class runManager:
         return run
 
     def run_steps(self, run, steps=1):
+        self.runs_to_send={
+            "step_data": [],
+            "bank_data": [],
+            "workers": [],
+            "c_firms": [],
+            "k_firms": [],
+            "capitalists": []
+        }
         for _ in range(steps):
             time_processing=run.run_step()
-            #update_run_data(self.db_creds, run, time_processing)
+            if self.db_creds is not None:
+                self.save_run_data(run)
+
+
+    def save_run_data(self, run):
+        # logic here is to try to run X steps and then try to send data to db for speed, instead of sending data after every step
+        step_data={
+            "step_id": run.current_step_id,
+            "run_id": run.runid,
+            "start_state": pickle.dumps(run.current_step_start_state),
+            "end_state": pickle.dumps(run.current_step_end_state),
+            "step_no": run.current_step
+        }
+
+        bank_data={
+            "step_id": run.current_step_id,
+            "equity": run.bank.equity,
+            "r": run.bank.r,
+            "c_history": str(run.bank.c_history),   # proper serialization for later
+            "k_history": str(run.bank.k_history),
+            "c_coef": run.bank.c_model_coefficient,
+            "c_intercept": run.bank.c_model_intercept,
+            "k_coef": run.bank.k_model_coefficient,
+            "k_intercept": run.bank.k_model_intercept
+        }
+
+        workers=[]
+        for w in run.workers:
+            workers.append({
+                "step_id": run.current_step_id,
+                "worker_id": w.id,
+                "wealth": w.wealth,
+                "human_wealth": w.human_wealth,
+                "budget": w.budget,
+                "spent_amount": w.spent_amount,
+                "employed": w.employed,
+                "employer": w.employer.id if w.employer else None
+            })
+
+        c_firms=[]
+        for f in run.c_firms:
+            c_firms.append({
+                "step_id": run.current_step_id,
+                "cf_id": f.id,
+                "liquidity": f.liquidity,
+                "price": f.price,
+                "equity": f.equity,
+                "debt": f.debt,
+                "profit": f.profit,
+                "production": f.production,
+                "sales": f.sales,
+                "queue": f.queue,
+                "expected_demand": f.expected_demand,
+                "intresses": f.intresses,
+                "labour_demand": f.labour_demand,
+                "lmbda": f.lmbda,
+                "loans": str(f.loans),  # proper serialization for later
+                "staff": str([w.id for w in f.staff]),
+                "first_step": f.first_step,
+                "capital": f.capital,
+                "capital_avg": f.capital_avg,
+                "invested": f.invested,
+                "planned_production": f.planned_production,
+                "planned_investment": f.planned_investment,
+                "wage_bill": f.wage_bill,
+                "investment_cost": f.investment_cost,
+                "capital_book": f.capital_book,
+                "desired_capital": f.desired_capital
+            })
+
+        k_firms = []
+        for f in run.k_firms:
+            k_firms.append({
+                "step_id": run.current_step_id,
+                "kf_id": f.id,
+                "liquidity": f.liquidity,
+                "price": f.price,
+                "equity": f.equity,
+                "debt": f.debt,
+                "profit": f.profit,
+                "production": f.production,
+                "sales": f.sales,
+                "inventory": f.inventory,
+                "queue": f.queue,
+                "expected_demand": f.expected_demand,
+                "intresses": f.intresses,
+                "loans": str(f.loans),  # proper serialization for later
+                "staff": str([w.id for w in f.staff]),
+                "labour_demand": f.labour_demand,
+                "lmbda": f.lmbda,
+                "wage_bill": f.wage_bill,
+                "first_step": f.first_step
+            })
+
+        capitalists=[]
+        for c in run.capitalists:
+            capitalists.append({
+                "step_id": run.current_step_id,
+                "capitalist_id": c.id,
+                "budget": c.budget,
+                "wealth": c.wealth,
+                "human_wealth": c.human_wealth,
+                "spent_amount": c.spent_amount
+            })
+
+        self.runs_to_send["step_data"].append(step_data)
+        self.runs_to_send["bank_data"].append(bank_data)
+        self.runs_to_send["workers"].extend(workers)
+        self.runs_to_send["c_firms"].extend(c_firms)
+        self.runs_to_send["k_firms"].extend(k_firms)
+        self.runs_to_send["capitalists"].extend(capitalists)
+        if len(self.runs_to_send["step_data"])>=10:  # batch size of 10 steps before sending to DB
+            send_run_steps_data(self.db_creds, self.runs_to_send)
+        return 1
 
     def _drop_all_runs_from_db(self):
         drop_all_runs(self.db_creds)
@@ -86,6 +208,9 @@ class SimulationEngine:
 
         # Setup the world
         self._setup_agents()
+
+        self.current_step_start_state = None
+        self.current_step_end_state = None
 
     def _setup_agents(self):
         """Creates agents using parameters from the YAML config."""
@@ -187,6 +312,9 @@ class SimulationEngine:
         The recursive loop of the model (Section 2.1 of the paper).
         The order of events is mandatory.
         """
+        self.current_step_start_state = random.getstate()
+
+        self.current_step_id=random.randint(0, 1e10)
         self.current_step += 1
 
         # 1. FIRMS' PLANNING: Decide production and investment
@@ -232,6 +360,8 @@ class SimulationEngine:
         # 7. ACCOUNTING: Update bank equity, firm dividends, etc.
         #data.append(0)
         self._perform_accounting([])
+
+        self.current_step_end_state = random.getstate()
 
         return self.time_processing
 
