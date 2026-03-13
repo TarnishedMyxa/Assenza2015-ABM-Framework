@@ -2,6 +2,7 @@ import pymysql
 from pymysql.converters import escape_string
 import json, uuid, time
 from decimal import Decimal
+import pickle
 
 
 def execute_query(db_config, query):
@@ -439,12 +440,18 @@ def send_step_yld_data(db_config, step_yld_data):
         column_names = ", ".join(columns)
 
         values_to_insert = [
-            (data["run_id"], data["step"], json.dumps(data["yld_data"]))
-            for data in step_yld_data
+            (
+                row["run_id"],
+                row["step_id"],
+                row["step_no"],
+                pickle.dumps(row["start_state"]),
+                pickle.dumps(row["end_state"])
+            )
+            for row in step_yld_data
         ]
 
         with connection.cursor() as cursor:
-            query = f"INSERT INTO step_yld_data ({column_names}) VALUES ({placeholders})"
+            query = f"INSERT INTO steps ({column_names}) VALUES ({placeholders})"
             cursor.executemany(query, values_to_insert)
             connection.commit()
 
@@ -468,8 +475,13 @@ def send_bank_data(db_config, bank_data):
         column_names = ", ".join(columns)
 
         values_to_insert = [
-            (data["run_id"], data["step"], json.dumps(data["bank_state"]))
-            for data in bank_data
+            (
+                row["step_id"], row["equity"], row["r"],
+                json.dumps(row["c_history"]), json.dumps(row["k_history"]),
+                row["c_coef"], row["c_intercept"],
+                row["k_coef"], row["k_intercept"]
+            )
+            for row in bank_data
         ]
 
         with connection.cursor() as cursor:
@@ -497,8 +509,12 @@ def send_workers_data(db_config, workers_data):
         column_names = ", ".join(columns)
 
         values_to_insert = [
-            (data["run_id"], data["step"], json.dumps(data["workers_state"]))
-            for data in workers_data
+            (
+                row["step_id"], row["worker_id"], row["wealth"],
+                row["human_wealth"], row["spent_amount"], row["budget"],
+                row["employed"], row["employer"]
+            )
+            for row in workers_data
         ]
 
         with connection.cursor() as cursor:
@@ -522,15 +538,24 @@ def send_c_firms_data(db_config, c_firms_data):
         )
 
         columns = ["step_id", "cf_id", "liquidity", "price", "equity", "debt", "profit", "production", "sales",
-                   "inventory", "queue", "expected_demand", "intresses", "labour_demand", "lmbda", "loans", "staff",
+                   "queue", "expected_demand", "intresses", "labour_demand", "lmbda", "loans", "staff",
                    "first_step", "capital", "capital_avg", "invested", "planned_production", "planned_investment",
                    "wage_bill", "investment_cost", "capital_book", "desired_capital"]
         placeholders = ", ".join(["%s"] * len(columns))
         column_names = ", ".join(columns)
 
         values_to_insert = [
-            (data["run_id"], data["step"], json.dumps(data["c_firms_state"]))
-            for data in c_firms_data
+            (
+                row["step_id"], row["cf_id"], row["liquidity"], row["price"],
+                row["equity"], row["debt"], row["profit"], row["production"],
+                row["sales"], row["queue"], row["expected_demand"],
+                row["intresses"], row["labour_demand"], row["lmbda"], row["loans"],
+                row["staff"], row["first_step"], row["capital"], row["capital_avg"],
+                row["invested"], row["planned_production"], row["planned_investment"],
+                row["wage_bill"], row["investment_cost"], row["capital_book"],
+                row["desired_capital"]
+            )
+            for row in c_firms_data
         ]
 
         with connection.cursor() as cursor:
@@ -542,11 +567,82 @@ def send_c_firms_data(db_config, c_firms_data):
         print(f"Error while connecting to MySQL: {e}")
         raise
 
+def send_k_firms_data(db_config, k_firms_data):
+    try:
+        connection = pymysql.connect(
+            host=db_config['host'],
+            port=db_config['port'],
+            user=db_config['user'],
+            password=db_config['password'],
+            database=db_config['database'],
+            charset='utf8mb4'
+        )
+
+        columns = ["step_id", "kf_id", "liquidity", "price", "equity", "debt", "profit", "production", "sales",
+                   "inventory", "queue",
+                   "expected_demand", "intresses", "labour_demand", "lmbda", "loans", "staff",
+                   "first_step", "planned_production", "wage_bill"]
+        placeholders = ", ".join(["%s"] * len(columns))
+        column_names = ", ".join(columns)
+
+        values_to_insert = [
+            (
+                row["step_id"], row["kf_id"], row["liquidity"], row["price"],
+                row["equity"], row["debt"], row["profit"], row["production"],
+                row["sales"], row["inventory"], row["queue"], row["expected_demand"],
+                row["intresses"], row["labour_demand"], row["lmbda"], row["loans"],
+                row["staff"], row["first_step"], row["planned_production"],
+                row["wage_bill"]
+            )
+            for row in k_firms_data
+        ]
+
+        with connection.cursor() as cursor:
+            query = f"INSERT INTO kf_firms_data ({column_names}) VALUES ({placeholders})"
+            cursor.executemany(query, values_to_insert)
+            connection.commit()
+
+    except pymysql.MySQLError as e:
+        print(f"Error while connecting to MySQL: {e}")
+        raise
+
+def send_capitalists_data(db_config, capitalists_data):
+    try:
+        connection = pymysql.connect(
+            host=db_config['host'],
+            port=db_config['port'],
+            user=db_config['user'],
+            password=db_config['password'],
+            database=db_config['database'],
+            charset='utf8mb4'
+        )
+
+        columns = ["steps_id", "capitalist_id", "wealth", "human_wealth", "spent_amount", "budget"]
+        placeholders = ", ".join(["%s"] * len(columns))
+        column_names = ", ".join(columns)
+
+        values_to_insert = [
+            (
+                row["step_id"], row["capitalist_id"], row["wealth"],
+                row["human_wealth"], row["spent_amount"], row["budget"]
+            )
+            for row in capitalists_data
+        ]
+
+        with connection.cursor() as cursor:
+            query = f"INSERT INTO capitalists_data ({column_names}) VALUES ({placeholders})"
+            cursor.executemany(query, values_to_insert)
+            connection.commit()
+
+    except pymysql.MySQLError as e:
+        print(f"Error while connecting to MySQL: {e}")
+        raise
+
 def send_run_steps_data(db_config, run_steps_data):
     send_step_yld_data(db_config, run_steps_data["step_data"])
     send_bank_data(db_config, run_steps_data["bank_data"])
-    send_workers_data(db_config, run_steps_data["workers_data"])
-    send_c_firms_data(db_config, run_steps_data["c_firms_data"])
-    send_k_firms_data(db_config, run_steps_data["k_firms_data"])
-    send_capitalists_data(db_config, run_steps_data["capitalists_data"])
+    send_workers_data(db_config, run_steps_data["workers"])
+    send_c_firms_data(db_config, run_steps_data["c_firms"])
+    send_k_firms_data(db_config, run_steps_data["k_firms"])
+    send_capitalists_data(db_config, run_steps_data["capitalists"])
     return 1

@@ -89,10 +89,10 @@ class runManager:
             "r": run.bank.r,
             "c_history": str(run.bank.c_history),   # proper serialization for later
             "k_history": str(run.bank.k_history),
-            "c_coef": run.bank.c_model_coefficient,
-            "c_intercept": run.bank.c_model_intercept,
-            "k_coef": run.bank.k_model_coefficient,
-            "k_intercept": run.bank.k_model_intercept
+            "c_coef": run.bank.c_model_coefficient if run.bank.c_model_coefficient is not None else -1,
+            "c_intercept": run.bank.c_model_intercept if run.bank.c_model_intercept is not None else -1,
+            "k_coef": run.bank.k_model_coefficient if run.bank.k_model_coefficient is not None else -1,
+            "k_intercept": run.bank.k_model_intercept if run.bank.k_model_intercept is not None else -1,
         }
 
         workers=[]
@@ -125,8 +125,8 @@ class runManager:
                 "intresses": f.intresses,
                 "labour_demand": f.labour_demand,
                 "lmbda": f.lmbda,
-                "loans": str(f.loans),  # proper serialization for later
-                "staff": str([w.id for w in f.staff]),
+                "loans": json.dumps(f.get_all_loans()),  # proper serialization for later
+                "staff": json.dumps([w.id for w in f.staff]),
                 "first_step": f.first_step,
                 "capital": f.capital,
                 "capital_avg": f.capital_avg,
@@ -155,11 +155,12 @@ class runManager:
                 "queue": f.queue,
                 "expected_demand": f.expected_demand,
                 "intresses": f.intresses,
-                "loans": str(f.loans),  # proper serialization for later
-                "staff": str([w.id for w in f.staff]),
+                "loans": json.dumps(f.get_all_loans()),  # proper serialization for later
+                "staff": json.dumps([w.id for w in f.staff]),
                 "labour_demand": f.labour_demand,
                 "lmbda": f.lmbda,
                 "wage_bill": f.wage_bill,
+                "planned_production": f.planned_production,
                 "first_step": f.first_step
             })
 
@@ -182,6 +183,14 @@ class runManager:
         self.runs_to_send["capitalists"].extend(capitalists)
         if len(self.runs_to_send["step_data"])>=10:  # batch size of 10 steps before sending to DB
             send_run_steps_data(self.db_creds, self.runs_to_send)
+            self.runs_to_send={
+                "step_data": [],
+                "bank_data": [],
+                "workers": [],
+                "c_firms": [],
+                "k_firms": [],
+                "capitalists": []
+            }
         return 1
 
     def _drop_all_runs_from_db(self):
@@ -314,7 +323,7 @@ class SimulationEngine:
         """
         self.current_step_start_state = random.getstate()
 
-        self.current_step_id=random.randint(0, 1e10)
+        self.current_step_id=random.randint(0, 1e9)
         self.current_step += 1
 
         # 1. FIRMS' PLANNING: Decide production and investment
@@ -448,9 +457,6 @@ class SimulationEngine:
 
                 firm.liquidity += cost
 
-            if remaining_budget > 0:
-                q_price = firm.price
-                firm.queue += remaining_budget / q_price
 
     def _resolve_capital_market(self):
         """C-firms visit Zk K-firms to buy Capital goods"""

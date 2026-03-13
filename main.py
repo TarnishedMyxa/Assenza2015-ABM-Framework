@@ -16,22 +16,13 @@ def main(settings):
 
     rm = runManager(settings) # manager sets up config and database connection, and manages runs
 
-    rm._drop_all_runs_from_db()
+    #rm._drop_all_runs_from_db()
 
     run=rm.create_new_run()
 
-    run.run_steps(run, 100)
+    rm.run_steps(run, 3000)
 
     return 0
-
-    # 2. Initialize the Engine (which creates all agents)
-    economy = SimulationEngine(config)
-
-    # 3. Run Simulation Loop
-    for t in range(config['simulation']['periods']):
-        data=economy.run_step()
-
-    return data
 
 
 if __name__ == "__main__":
@@ -42,6 +33,6 @@ if __name__ == "__main__":
         "db_config_id": db_config_id,
         "create_new_config_in_db": create_new_config_in_db
     }
-    N=1
+    N=10
     for i in range(N):
         data=main(settings)
