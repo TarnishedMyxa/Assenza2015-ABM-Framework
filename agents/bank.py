@@ -19,20 +19,23 @@ class Bank:
         self.mu = markup  # µ
         self.zeta = zeta  # ζ
         self.theta = theta  # θ
+        self.reserves=0
 
         # Rolling windows for C and K firms (datasets for T-hat periods)
         self.c_history = deque(maxlen=window_c)
         self.k_history = deque(maxlen=window_k)
         self.intresses=0
+        self.losses=0
+        self.divs=0
 
         self.c_model = None
         self.k_model = None
 
-        self.c_model_coefficient = None
-        self.c_model_intercept = None
+        self.c_model_coefficient = 12
+        self.c_model_intercept = -2.5
 
-        self.k_model_coefficient = None
-        self.k_model_intercept = None
+        self.k_model_coefficient = 12
+        self.k_model_intercept = -2.5
 
     def estimate_logistic_failure_prob(self):
         """
@@ -48,7 +51,7 @@ class Bank:
             self.c_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=100)
 
         def update_and_fit(model, history, firm_type):
-            if not history or len(history) < 20:
+            if not history or len(history) < 50:
                 return
 
             data = np.array(history)
@@ -79,18 +82,23 @@ class Bank:
         model = self.c_model if firm_type == 'C' else self.k_model
 
         if model is None:
-            return 0.04  # Default small risk before models are trained
+            if self.c_model_coefficient is None or self.c_model_intercept is None:
+                return 0.5  # Default  risk before C model is trained
+            # Use C model parameters to calculate probability
+            z = self.c_model_coefficient * leverage + self.c_model_intercept
+            phi = 1 / (1 + np.exp(-z))
+            return phi
 
         if firm_type == 'C':
             if self.c_model_coefficient is None or self.c_model_intercept is None:
-                return 0.04  # Default small risk before C model is trained
+                return 0.5  # Default  risk before C model is trained
             # Use C model parameters to calculate probability
             z = self.c_model_coefficient * leverage + self.c_model_intercept
             phi = 1 / (1 + np.exp(-z))
             return phi
         else:
             if self.k_model_coefficient is None or self.k_model_intercept is None:
-                return 0.04  # Default small risk before K model is trained
+                return 0.5  # Default risk before K model is trained
             # Use K model parameters to calculate probability
             z = self.k_model_coefficient * leverage + self.k_model_intercept
             phi = 1 / (1 + np.exp(-z))
@@ -106,24 +114,30 @@ class Bank:
         phi = self.get_bankruptcy_prob(leverage, firm_type)
 
         # Avoid division by zero: T = 1 / phi (Eq 8.4)
-        phi = max(phi, 0.001)
+        phi = max(phi, 0.01)
         expected_T = 1 / phi
 
         xi_T = (1 - (1 - self.theta) ** (expected_T + 1)) / self.theta
 
-        r=self.mu *( (1+self.r/self.theta)/xi_T - self.theta  )
+        r=self.mu *( (1+self.r/self.theta)/xi_T ) - self.theta
 
         return max(r, self.r), phi
 
     def get_credit_limit(self, current_debt, phi):
         """
         Rationing based on Equations 8.12 and bank exposure.
-        F_bar = (zeta * Eb) / phi
         """
-
-        available_credit = self.zeta * self.equity / phi -   current_debt
+        available_credit = (self.zeta * self.equity - phi * current_debt) / phi
+        available_credit =min(available_credit, self.equity * 0.1)
 
         return max(0, available_credit)
+
+    def dividends(self):
+        if self.intresses - self.losses > 0 and self.equity > 0:
+            self.divs = (self.intresses - self.losses) * 0.2
+            return self.divs
+        return 0
+
 
 if __name__=="__main__":
     pass

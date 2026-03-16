@@ -26,6 +26,10 @@ class BaseFirm:
         self.queue=0
         self.expected_demand = 0.0  # Y_e
         self.intresses=0
+        self.investment_cost=0
+        self.wage_bill=0
+        self.wear_and_tear = 0
+        self.capital_apreciation = 0
 
         # Injected Parameters (from YAML)
         self.labour_prod = labour_prod  # w
@@ -52,19 +56,14 @@ class BaseFirm:
 
 
     def dividends(self):
+        self.profit = self.sales * self.price - self.intresses - self.wage_bill - self.wear_and_tear + self.capital_apreciation
 
-        self.profit = self.sales * self.price - self.intresses
-
-        if self.profit > 0:
-            return self.profit * self.tau
-        else:
-            return 0
-
-    def payout_dividents(self):
-        divs=self.dividends()
-        self.liquidity -= divs
-        self.owner.wealth += divs
-
+        if self.profit > 0 and self.liquidity > 0:
+            div= self.profit * self.tau
+            div=min(div, self.liquidity)
+            self.liquidity -= div
+            self.owner.wealth += div
+            self.owner.income += div
 
     def get_adjustment_shock(self):
         """Returns a random price adjustment factor U(0, 0.1)."""
@@ -79,7 +78,7 @@ class BaseFirm:
     def pay_intress(self, bank):
         for l in self.loans:
             amount=l.rate * l.amount
-            bank.intresses=amount
+            bank.intresses+=amount
             self.liquidity -= amount
 
     def repay_loan(self):
@@ -88,7 +87,7 @@ class BaseFirm:
             amount=self.theta * l.amount
             l.amount -= amount
             self.liquidity -= amount
-            #self.intresses+=amount  # those are not intresses CHANGE THIS LATER
+            self.intresses+=amount * l.rate
             self.debt -= amount
 
     def fire_workers(self, amount):
@@ -118,15 +117,21 @@ class BaseFirm:
         if denominator <= 0:
             return 0.9999  # in theory this should not happen since equity negative triggers bankruptcy before
 
-        leverage =  (self.debt + self.debt) / denominator
+        leverage =  (self.debt + gap) / denominator
         self.lmbda=min(leverage, 0.9999)
         return self.lmbda
 
-    def process_bankruptcy(self):
-        self.loans=[]
-        self.owner.wealth -= self.equity
-        self.liquidity -= self.equity
-        self.equity = 0
+    def process_bankruptcy(self, bank, k_price):
+        self.liquidity += self.owner.wealth
+        self.owner.wealth = 0
+        if self.liquidity >= self.debt:
+            self.liquidity -= self.debt
+        else:
+            bank.losses += self.debt - self.liquidity
+            self.liquidity = 0
+        self.debt = 0
+        self.loans = []
+        self.update_equity(k_price)
 
 class ConsumptionFirm(BaseFirm):
     """
@@ -165,19 +170,21 @@ class ConsumptionFirm(BaseFirm):
         self.planned_investment = 0.0
         self.wage_bill = 0.0
         self.investment_cost = 0.0
-        self.capital_book=self.capital * 1.2
-        self.desired_capital=0
+        self.capital_book=self.capital * 2.4
+        self.desired_capital=15
+
 
     def adjust_price_and_output(self, market_avg_price):
+
         """
         Adaptive rule for Price (P) and Desired Output (Y*).
         """
         eta = self.get_adjustment_shock()
 
         # 1. Price Decision
-        if self.inventory > 0 and self.price > market_avg_price:
+        if self.inventory > 0 and self.price >= market_avg_price:
             self.price *= (1 - eta)
-        elif self.inventory <= 0 and self.price <= market_avg_price:
+        elif self.inventory - self.queue< 0 and self.price <= market_avg_price:
             self.price *= (1 + eta)
 
         # 2. Quantity Decision (Desired Production)
@@ -185,29 +192,28 @@ class ConsumptionFirm(BaseFirm):
         if self.inventory > 0 and self.price < market_avg_price:
             # Excess Supply: Cut production
             self.planned_production = self.production - self.rho * self.inventory
-        elif self.inventory<= 0 and self.price > market_avg_price:
+        elif self.inventory - self.queue <= 0 and self.price >= market_avg_price:
             # Excess Demand: Increase production
-            self.planned_production = self.production - self.rho * (self.inventory )
+            self.planned_production = self.production - self.rho * (self.inventory - self.queue )
 
         if self.first_step:
             self.planned_production= self.initial_production
             self.first_step = False
-        self.expected_demand = self.planned_production
 
     def calculate_labor_demand(self):
         """Calculates labor demand based on planned production and capital."""
         # Assuming a Leontief production function: Y = min(alfa * N, k * K)
 
         if self.kappa * self.capital >= self.planned_production:
-            self.omega=self.planned_production / (self.kappa * self.desired_capital)
-            self.omega = max(min(self.omega, 1.0), 0.02)  # this holds the utilization between 2% and 100%
+            self.omega=self.planned_production / (self.kappa * self.capital)
+            self.omega = max(min(self.omega, 1.0), 0.03)  # this holds the utilization between 2% and 100%
 
-            desired_laboour = self.omega * self.desired_capital *  self.kappa/self.labour_prod
+            desired_laboour = self.omega * self.capital *  self.kappa/self.labour_prod
             current_labour = len(self.staff)
             self.labour_demand = desired_laboour - current_labour
 
         else:
-            desired_laboour = min(self.planned_production/self.labour_prod, self.desired_capital * self.kappa/self.labour_prod)
+            desired_laboour = min(self.planned_production/self.labour_prod, self.capital * self.kappa/self.labour_prod)
             current_labour = len(self.staff)
             self.labour_demand = desired_laboour - current_labour
 
@@ -226,12 +232,12 @@ class ConsumptionFirm(BaseFirm):
         required_k_last = self.production / self.kappa
         self.capital_avg = self.nu * self.capital_avg + (1 - self.nu) * required_k_last
 
-        """
+
         # 2. Check if firm is allowed to invest this period CURRENTLY THE ENGINE DECIDES WHICH FIRMS INVEST WHEN
         if random.random() > self.gamma:
             self.planned_investment = 0
             return
-        """
+
 
         # 3. Calculate Investment
         replacement = (self.delta * self.capital_avg) / self.gamma
@@ -286,6 +292,8 @@ class ConsumptionFirm(BaseFirm):
             to_buy -= actual_qty
             costs += cost    # in theory here can be implemented FIFO, LIFO, avg cost methods but i will just recalc the book value somewhere else with avg price on the market
 
+        if to_buy > 0:
+            firm.queue += to_buy
 
         self.capital += self.planned_investment - to_buy
         self.liquidity -= costs
@@ -297,23 +305,21 @@ class ConsumptionFirm(BaseFirm):
         self.production = min(self.capital * self.kappa, self.labour_prod * len(self.staff) )
         self.inventory = self.production   # Notice that if there was any inventory before it is gone now
 
-    def depreciated_capital_update(self):
+    def depreciate_capital(self, k_price):
         """Updates capital stock: K_t+1 = (1 - delta*util)K + I """
         utilization = self.production / (self.capital * self.kappa) if self.capital > 0 else 0
-        self.capital = (1 - self.delta * utilization) * self.capital + self.planned_investment
+        self.wear_and_tear = self.delta * utilization * self.capital * k_price
+        self.capital = (1 - self.delta * utilization) * self.capital
 
     def update_equity(self, k_price):
-        self.equity = k_price * self.capital + self.liquidity - self.get_loans()
+        #self.equity = k_price * self.capital + self.liquidity - self.get_loans()
+        self.equity =  self.liquidity - self.get_loans()
 
         return self.equity
 
-    def depreciate_capital(self):
-        # for some reason in consumptions firms only utiliized capital is depreciated but in K firms inventory is depreciated fully
-        utilized_cap= self.production / (self.capital * self.kappa ) * self.capital
-        self.capital -= utilized_cap * self.delta
-
-    def recalculate_book_capital(self, c_price):
-        self.capital_book = c_price * self.capital
+    def recalculate_book_capital(self, k_price):
+        self.capital_apreciation = k_price * self.capital - self.capital_book
+        self.capital_book = k_price * self.capital
 
     def check_bankruptcy(self):
         #revenue=self.sales * self.price
@@ -322,7 +328,7 @@ class ConsumptionFirm(BaseFirm):
 
         K_book = self.capital_book
         debt = self.get_loans()
-        self.equity = K_book + self.liquidity - debt
+        self.equity =  self.liquidity - debt
         return self.equity <= 0
 
 
@@ -352,21 +358,22 @@ class CapitalFirm(BaseFirm):
 
         if self.inventory > 0 and self.price > market_avg_price:
             self.price *= (1 - eta)
-        elif self.inventory  <= 0 and self.price <= market_avg_price:
+            self.price =max(self.price, 0.5)
+        elif self.inventory - self.queue<= 0 and self.price <= market_avg_price:
             self.price *= (1 + eta)
 
         # Quantity Adjustment
         if self.inventory > 0:
             self.planned_production = max(0, self.production - self.rho * self.inventory)
         else:
-            self.planned_production = self.production + self.rho * abs(self.inventory)
+            self.planned_production = self.production + self.rho * abs(self.inventory - self.queue)
 
 
         if self.first_step:
             self.planned_production= self.initial_production
             self.first_step = False
 
-        self.planned_production = max(self.planned_production, 1.0)
+        self.planned_production = max(self.planned_production, 0)
         self.queue=0
 
     def calculate_labor_demand(self):
@@ -408,6 +415,7 @@ class CapitalFirm(BaseFirm):
     def depreciate_capital(self):
         # Paper mentions that capital in K firms inventory depreciates faster but doesnt give any specific number of anything at all
         # delta for k firms can be changed in configs if needed
+        self.capital_apreciation = - self.delta * self.inventory
         self.inventory -= self.inventory * self.delta
 
     def check_bankruptcy(self):
@@ -417,7 +425,8 @@ class CapitalFirm(BaseFirm):
         return self.equity <= 0
 
     def update_equity(self, k_price):
-        self.equity = k_price * self.inventory + self.liquidity - self.get_loans()
+        #self.equity = k_price * self.inventory + self.liquidity - self.get_loans()
+        self.equity =  self.liquidity - self.get_loans()
 
         return self.equity
 

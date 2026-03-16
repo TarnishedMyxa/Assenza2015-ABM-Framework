@@ -20,7 +20,7 @@ def main(settings):
 
     run=rm.create_new_run()
 
-    rm.run_steps(run, 3000)
+    rm.run_steps(run, 600)
 
     return 0
 
@@ -33,6 +33,6 @@ if __name__ == "__main__":
         "db_config_id": db_config_id,
         "create_new_config_in_db": create_new_config_in_db
     }
-    N=10
-    for i in range(N):
+    RUNS=1
+    for i in range(RUNS):
         data=main(settings)

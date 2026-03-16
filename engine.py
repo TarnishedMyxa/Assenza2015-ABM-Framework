@@ -42,7 +42,7 @@ class runManager:
 
         runid = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890', k=15))
 
-        if self.config["config_id"] is not None:
+        if "config_id" in self.config:
             run_data = {
                 "config": self.config["config_id"],
                 "run_id": runid,
@@ -53,8 +53,8 @@ class runManager:
             send_run_data(self.db_creds, run_data)
 
         run=SimulationEngine(self.config, name=name, start_seed=start_seed, runid=runid)
-
-        populate_run_data(self.db_creds, run)
+        if "config_id" in self.config:
+            populate_run_data(self.db_creds, run)
 
         return run
 
@@ -93,6 +93,8 @@ class runManager:
             "c_intercept": run.bank.c_model_intercept if run.bank.c_model_intercept is not None else -1,
             "k_coef": run.bank.k_model_coefficient if run.bank.k_model_coefficient is not None else -1,
             "k_intercept": run.bank.k_model_intercept if run.bank.k_model_intercept is not None else -1,
+            "intresses":run.bank.intresses,
+            "losses":run.bank.losses
         }
 
         workers=[]
@@ -136,7 +138,8 @@ class runManager:
                 "wage_bill": f.wage_bill,
                 "investment_cost": f.investment_cost,
                 "capital_book": f.capital_book,
-                "desired_capital": f.desired_capital
+                "desired_capital": f.desired_capital,
+                "omega": f.omega
             })
 
         k_firms = []
@@ -214,6 +217,7 @@ class SimulationEngine:
         self.bank = None
         self.deposits = {}
         self.time_processing={}
+        self.to_process_bankruptcies=[]
 
         # Setup the world
         self._setup_agents()
@@ -221,8 +225,11 @@ class SimulationEngine:
         self.current_step_start_state = None
         self.current_step_end_state = None
 
+
     def _setup_agents(self):
         """Creates agents using parameters from the YAML config."""
+
+        total_money=0
 
         self.wage_rate = self.config['firms']['wage_rate']
         self.tau = self.config['firms']['dividend_payout_ratio']
@@ -246,8 +253,10 @@ class SimulationEngine:
                 search_count=self.config['households']['search_intensity']['consumer']
             )
             self.workers.append(w)
+            total_money+=self.config['households']['initial_assets']
 
         self.zc=self.config['households']['search_intensity']['consumer']
+        self.ze = self.config['households']['search_intensity']['labor']
 
         # 3. Setup C-Firms
         for i in range(self.config['simulation']['num_c_firms']):
@@ -279,6 +288,7 @@ class SimulationEngine:
             cf.expected_demand = cf.initial_production
             cf.wage=self.wage_rate
             self.c_firms.append(cf)
+            total_money+=self.config['firms']['initial_liquidity']
 
         # 4. Setup K-Firms
         for i in range(self.config['simulation']['num_k_firms']):
@@ -302,6 +312,7 @@ class SimulationEngine:
 
             kf.wage=self.wage_rate
             self.k_firms.append(kf)
+            total_money+=self.config['firms']['initial_liquidity']
 
         cn=0
         for f in self.c_firms + self.k_firms:
@@ -314,6 +325,9 @@ class SimulationEngine:
             cn+=1
             f.owner=capitalist
             self.capitalists.append(capitalist)
+            total_money+=self.config["households"]["initial_assets"]
+
+        self.bank.reserves=total_money
 
 
     def run_step(self):
@@ -321,6 +335,7 @@ class SimulationEngine:
         The recursive loop of the model (Section 2.1 of the paper).
         The order of events is mandatory.
         """
+
         self.current_step_start_state = random.getstate()
 
         self.current_step_id=random.randint(0, 1e9)
@@ -331,20 +346,28 @@ class SimulationEngine:
         self.avg_p_c = np.mean([f.price for f in self.c_firms])
         self.avg_p_k = np.mean([f.price for f in self.k_firms])
 
+        self.bank.losses = 0
+        for f in self.to_process_bankruptcies:
+            f.process_bankruptcy(self.bank, self.avg_p_k)
+
+        self.bank.equity += - self.bank.losses
+        self.bank.divs=0
+
         for cf in self.c_firms:
+            cf.sales=0
             cf.update_equity(self.avg_p_c)
-            if cf.id=="C_0":
-                pass
             cf.adjust_price_and_output(self.avg_p_c)
+            cf.queue=0
             cf.plan_invest()
 
         for kf in self.k_firms:
+            kf.sales=0
             kf.update_equity(self.avg_p_k)
             kf.adjust_price_and_output(self.avg_p_k)
+            kf.queue=0
 
         # Banks estimate bankruptcy predictions for leverage levels and prices
         self.bank.estimate_logistic_failure_prob()
-
 
         # 1. FIRMS' PLANNING: Decide production
         for f in self.c_firms + self.k_firms:
@@ -377,15 +400,15 @@ class SimulationEngine:
     def _resolve_credit_market(self, avg_p_k):
         """Firms ask for loans, Bank calculates risk and rations if necessary."""
         for firm in self.c_firms + self.k_firms:
-            if firm.id=="C_0":
-                pass
             gap = firm.get_financing_gap(k_goods_price=avg_p_k)
             if gap > 0:
                 # Bank sets rate and determines loan amount
                 leverage= firm.calculate_leverage(gap)
                 rate, phi = self.bank.set_interest_rate(leverage)
                 loan_granted = self.bank.get_credit_limit(firm.debt, phi )
-                firm.receive_loan(min(gap, loan_granted), rate)
+                if loan_granted > 0:
+                    firm.receive_loan(min(gap, loan_granted), rate)
+            firm.calculate_leverage(0)
 
     def _resolve_labor_market(self):
         """Matching unemployed workers to firms (Ze parameter)."""
@@ -425,13 +448,14 @@ class SimulationEngine:
 
         num_firms = len(sorted_c_firms)
 
-        all_indices = np.random.randint(0, num_firms, size=(len(shoppers), self.zc))
+        all_indices = np.random.randint(0, num_firms, size=(len(shoppers), self.ze))
 
         for i, h in enumerate(shoppers):
             visited_indices = all_indices[i]
 
             visited_indices.sort()
 
+            h.determine_budget()
             remaining_budget = h.budget
             h.spent_amount = 0.0
 
@@ -457,107 +481,87 @@ class SimulationEngine:
 
                 firm.liquidity += cost
 
+            if remaining_budget > 0:
+                q_price = firm.price
+                firm.queue += remaining_budget / q_price
+
 
     def _resolve_capital_market(self):
         """C-firms visit Zk K-firms to buy Capital goods"""
         for cf in self.c_firms:
-            if cf.id=="C_0":
-                pass
             cf.shop(self.k_firms)
 
     def _perform_accounting(self, data):
         """Handle accounting"""
 
-        total_wage=0
-        total_spent=0
         for h in self.workers :
             #get wage and spend money on consumption
             if h.employed:
                 h.wealth += self.wage_rate - h.spent_amount
-                total_wage += self.wage_rate
-                total_spent += h.spent_amount
+                h.employer.liquidity -= self.wage_rate
             else:
-                h.wealth -= h.spent_amount
-                total_spent += h.spent_amount
+                h.wealth += - h.spent_amount
+            h.recalculate_human_wealth(self.wage_rate)
 
-        #self.ledger.add_entry(Entry("Wages_workers", total_wage, "","w"))
-        #self.ledger.add_entry(Entry("Consum_worker", total_spent, "w", "cf"))
+        for c in self.capitalists:
+            c.wealth +=  - c.spent_amount
 
         self.bank.intresses=0
-        total_wages = 0
-        total_sales=0
         for f in self.c_firms:
-            if f.id=="C_0":
-                pass
             f.pay_intress(self.bank)
             f.repay_loan()
-            total_wages += len(f.staff) * self.wage_rate
-            total_sales += f.sales * f.price
-            f.sales=0
-            f.liquidity -= len(f.staff) * self.wage_rate
 
-        #self.ledger.add_entry(Entry("Wages_cf", total_wages, "cf", ""))
-        #self.ledger.add_entry(Entry("Sales_cf", total_sales, "", "cf"))
-
-        total_wages = 0
-        total_sales = 0
         for f in self.k_firms:
             f.pay_intress(self.bank)
             f.repay_loan()
-            total_wages += len(f.staff) * self.wage_rate
-            total_sales += f.sales * f.price
-            f.sales=0
-            f.liquidity -= len(f.staff) * self.wage_rate
 
-        #self.ledger.add_entry(Entry("Wages_kf", total_wages, "kf", ""))
-        #self.ledger.add_entry(Entry("Sales_kf", total_sales, "", "kf"))
 
+        divs=self.bank.dividends()
+        self.bank.equity += self.bank.intresses - divs
+        caps=len(self.capitalists)
+        for c in self.capitalists:
+            c.wealth+= divs/caps
+            c.income=divs/caps
 
         bankrupt=[]
         history_for_bank=[]
         # Dividends tau
-        total_divs=0
         for f in self.c_firms:
-            if f.id=="C_0":
-                pass
-            f.depreciate_capital()
+            f.wage_bill= len(f.staff) * self.wage_rate
+            f.depreciate_capital(self.avg_p_k)
             f.recalculate_book_capital(self.avg_p_k)
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
                 history_for_bank.append((f.lmbda, 1))
             else:
-                dividents=f.dividends()
-                total_divs += dividents
-                f.payout_dividents()
-                history_for_bank.append((f.lmbda, 0))
+                f.dividends()
+                if f.debt > 0:
+                    history_for_bank.append((f.lmbda, 0))
+            f.owner.recalulate_human_wealth()
 
         cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
         self.bank.c_history.extend(cleaned)
 
-        #self.ledger.add_entry(Entry("Dividents_cf", total_divs, "cf", "c"))
-
         history_for_bank = []
-        total_divs = 0
         for f in self.k_firms:
+            f.wage_bill = len(f.staff) * self.wage_rate
             f.depreciate_capital()
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
                 history_for_bank.append((f.lmbda, 1))
             else:
-                dividents = f.dividends()
-                total_divs += dividents
-                f.payout_dividents()
+                f.dividends()
                 history_for_bank.append((f.lmbda, 0))
+
+            f.owner.recalulate_human_wealth()
 
         cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
         self.bank.k_history.extend(cleaned)
 
-        for f in bankrupt:
-            f.process_bankruptcy()
+        self.to_process_bankruptcies = bankrupt
 
-        #self.ledger.add_entry(Entry("Dividents_kf", total_divs, "kf", "c"))
 
 def send_config_to_db(db_creds, config):
     cnf={

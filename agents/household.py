@@ -11,7 +11,7 @@ class Household:
                  cons_propensity=0.05):
         self.id = agent_id
         self.wealth = initial_wealth  # D_c (Financial Wealth/Deposits)
-        self.human_wealth = 0.0  # Y*_c (Permanent Income proxy)
+        self.human_wealth = 0.05  # Y*_c (Permanent Income proxy)
         self.spent_amount = 0.0
 
         # Parameters
@@ -19,13 +19,17 @@ class Household:
         self.chi = cons_propensity  # χ (Consumption propensity)
         self.budget=0
 
-
     def determine_budget(self):
         """
         Calculates consumption budget based on permanent income and financial wealth.
         Budget = Y*_c,t + χ * D_c,t
         """
+        if self.wealth <=0:
+            self.budget=0
+            return 0
+
         self.budget = self.human_wealth + (self.chi * self.wealth)
+        self.budget = min(self.budget, self.wealth)
         return max(0, self.budget)
 
 
@@ -42,6 +46,14 @@ class Worker(Household):
         self.search_count = search_count
         self.wage = 1.0
 
+    def recalculate_human_wealth(self, wage_rate):
+        """
+        Updates human wealth based on employment status and wage.
+        Y*_c,t = ξ * Y*_c,t-1 + (1 - ξ) * w_t * employed
+        """
+        self.income =wage_rate if self.employed else 0.0
+        self.human_wealth = max(0, (self.xi * self.human_wealth) + ((1 - self.xi) * self.income) )
+
 class Capitalist(Household):
     """
     Owns a firm. Receives dividends if the firm is profitable.
@@ -53,8 +65,24 @@ class Capitalist(Household):
         super().__init__(capitalist_id, initial_wealth, **kwargs)
         self.owned_firm = owned_firm
         self.search_count=search_count
+        self.income=0.0
+
+    def recalulate_human_wealth(self):
+
+        """
+        Updates human wealth based on dividends from the owned firm.
+        Y*_c,t = ξ * Y*_c,t-1 + (1 - ξ) * dividends_t
+        """
+        if self.human_wealth <=0.0000001:
+            pass
+        self.human_wealth =max(0, (self.xi * self.human_wealth) + ((1 - self.xi) * self.income) )
+
+        if self.human_wealth <=0.0000001:
+            pass
+
 
     def recapitalize_firm(self):
+
         """
         If firm equity < 0, the capitalist uses personal wealth to provide equity.
 

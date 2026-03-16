@@ -32,12 +32,12 @@ firms:
     investment_memory: 0.5     # ν (nu): Memory parameter for investment
     desired_utilization: 0.85  # ω (omega): Desired capacity utilization
     search_k_firms: 2          # Zk: K-firms visited by a C-firm
-    initial_price: 5.5         # initial price of consumption good
+    initial_price: 2.4         # initial price of consumption good
 
   k_sector:
     initial_production: 3.0    # Yk1: Initial production
     labor_productivity: 0.5    # α (alpha): Productivity of labor
-    initial_price: 1.2         # initial price of capital good
+    initial_price: 2.4        # initial price of capital good
 
 # Financial Sector Parameters
 bank:

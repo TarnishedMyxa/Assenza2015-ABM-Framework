@@ -164,7 +164,7 @@ def populate_run_data(db_config, run):
             "gamma": c.gamma,
             "labour_prod": c.labour_prod,
             "nu": c.nu,
-            "omega": c.omega,
+            "desired_omega": c.desired_utilization,
             "owner_id": c.owner.id,
             "rho": c.rho,
             "search_count": c.search_count,
@@ -280,7 +280,7 @@ def send_c_firm_const(db_config, c_firm_const):
         )
 
         columns = ["run_id", "cf_id", "delta", "eta_max", "kappa", "gamma", "labour_prod",
-                   "nu", "omega", "owner_id", "rho", "search_count", "tau", "theta"]
+                   "nu", "desired_omega", "owner_id", "rho", "search_count", "tau", "theta"]
         placeholders = ", ".join(["%s"] * len(columns))
         column_names = ", ".join(columns)
 
@@ -470,7 +470,7 @@ def send_bank_data(db_config, bank_data):
             charset='utf8mb4'
         )
 
-        columns = ["step_id", "equity", "r", "c_history", "k_history", "c_coef", "c_intercept", "k_coef", "k_intercept"]
+        columns = ["step_id", "equity", "r", "c_history", "k_history", "c_coef", "c_intercept", "k_coef", "k_intercept", "intresses", "losses"]
         placeholders = ", ".join(["%s"] * len(columns))
         column_names = ", ".join(columns)
 
@@ -479,7 +479,7 @@ def send_bank_data(db_config, bank_data):
                 row["step_id"], row["equity"], row["r"],
                 json.dumps(row["c_history"]), json.dumps(row["k_history"]),
                 row["c_coef"], row["c_intercept"],
-                row["k_coef"], row["k_intercept"]
+                row["k_coef"], row["k_intercept"], row["intresses"], row["losses"]
             )
             for row in bank_data
         ]
@@ -540,7 +540,7 @@ def send_c_firms_data(db_config, c_firms_data):
         columns = ["step_id", "cf_id", "liquidity", "price", "equity", "debt", "profit", "production", "sales",
                    "queue", "expected_demand", "intresses", "labour_demand", "lmbda", "loans", "staff",
                    "first_step", "capital", "capital_avg", "invested", "planned_production", "planned_investment",
-                   "wage_bill", "investment_cost", "capital_book", "desired_capital"]
+                   "wage_bill", "investment_cost", "capital_book", "desired_capital", "omega"]
         placeholders = ", ".join(["%s"] * len(columns))
         column_names = ", ".join(columns)
 
@@ -553,7 +553,7 @@ def send_c_firms_data(db_config, c_firms_data):
                 row["staff"], row["first_step"], row["capital"], row["capital_avg"],
                 row["invested"], row["planned_production"], row["planned_investment"],
                 row["wage_bill"], row["investment_cost"], row["capital_book"],
-                row["desired_capital"]
+                row["desired_capital"], row["omega"]
             )
             for row in c_firms_data
         ]
