@@ -7,7 +7,8 @@ from itertools import chain
 
 class Bank:
     def __init__(self, initial_equity, r_policy=0.01, markup=1.1,
-                 zeta=0.002, theta=0.05, window_c=1000, window_k=1000):
+                 zeta=0.002, theta=0.05, window_c=1000, window_k=1000,
+                 dividend_ratio=0.2):
         """
         r_policy: The risk-free rate 'r' (instrument of monetary policy)
         markup: 'mu' (arbitrage multiplier > 1)
@@ -19,6 +20,7 @@ class Bank:
         self.mu = markup  # µ
         self.zeta = zeta  # ζ
         self.theta = theta  # θ
+        self.tau = dividend_ratio
         self.reserves=0
 
         # Rolling windows for C and K firms (datasets for T-hat periods)
@@ -133,10 +135,13 @@ class Bank:
         return max(0, available_credit)
 
     def dividends(self):
-        if self.intresses - self.losses > 0 and self.equity > 0:
-            self.divs = (self.intresses - self.losses) * 0.2
-            return self.divs
-        return 0
+        net_profit = self.intresses - self.losses
+        if net_profit <= 0:
+            self.divs = 0.0
+            return 0.0
+
+        self.divs = self.tau * net_profit
+        return self.divs
 
 
 if __name__=="__main__":

@@ -240,7 +240,8 @@ class SimulationEngine:
             r_policy=self.config['bank']['risk_free_rate'],
             markup=self.config['bank']['markup'],
             zeta=self.config['bank']['loss_parameter'],
-            theta=self.config['bank']['debt_installment_rate']
+            theta=self.config['bank']['debt_installment_rate'],
+            dividend_ratio=self.config['firms']['dividend_payout_ratio']
         )
 
         # 2. Setup Households
@@ -348,19 +349,14 @@ class SimulationEngine:
         self.avg_p_k = np.mean([f.price for f in self.k_firms])
 
         self.bank.losses = 0
+        self.bank.divs = 0
         for f in self.to_process_bankruptcies:
             f.process_bankruptcy(self.bank, self.avg_p_k)
-
-        self.bank.equity += - self.bank.losses
-        # Bank bailout: recapitalize if equity goes negative
-        if self.bank.equity <= 0:
-            self.bank.equity = self.config['bank']['initial_equity'] * 0.5
-        self.bank.divs=0
 
         for cf in self.c_firms:
             cf.sales=0
             cf.update_equity(self.avg_p_c)
-            cf.adjust_price_and_output(self.avg_p_c)
+            cf.adjust_price_and_output(self.avg_p_c, self.avg_p_k)
             cf.queue=0
             cf.plan_invest()
 
@@ -390,8 +386,8 @@ class SimulationEngine:
         # 5. CAPITAL MARKET: C-firms shop (matching Zk)
         self._resolve_capital_market()
 
-        # 5.5. PAY WAGES + UPDATE HUMAN WEALTH (before goods market so workers have income for budgeting)
-        self._pay_wages_and_update_income()
+        # 5.5. PAY HOUSEHOLD INCOME BEFORE GOODS MARKET
+        self._pay_household_income()
 
         # 6. GOODS MARKET: Households shop (matching Zc)
         self._resolve_goods_market()
@@ -471,7 +467,7 @@ class SimulationEngine:
             visited_firms.sort(key=lambda f: f.price)
 
             h.determine_budget()
-            remaining_budget = h.budget
+            remaining_budget = min(h.budget, max(h.wealth, 0.0))
             h.spent_amount = 0.0
 
             for firm in visited_firms:
@@ -502,8 +498,20 @@ class SimulationEngine:
         for cf in self.c_firms:
             cf.shop(self.k_firms)
 
-    def _pay_wages_and_update_income(self):
-        """Pay wages and update human_wealth BEFORE goods market."""
+    def _pay_household_income(self):
+        """Pay current-period household income before consumption decisions."""
+        for household in self.workers + self.capitalists:
+            household.budget_wealth = max(household.wealth, 0.0)
+
+        for c in self.capitalists:
+            c.income = 0.0
+
+        for firm in self.c_firms + self.k_firms:
+            firm.pay_scheduled_dividend()
+
+        for c in self.capitalists:
+            c.recalulate_human_wealth()
+
         for h in self.workers:
             if h.employed:
                 h.wealth += self.wage_rate
@@ -532,13 +540,6 @@ class SimulationEngine:
             f.repay_loan()
 
 
-        divs=self.bank.dividends()
-        self.bank.equity += self.bank.intresses - divs
-        caps=len(self.capitalists)
-        for c in self.capitalists:
-            c.wealth+= divs/caps
-            c.income=divs/caps
-
         bankrupt=[]
         history_for_bank=[]
         # Dividends tau
@@ -549,12 +550,12 @@ class SimulationEngine:
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
+                self.bank.losses += f.intresses
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
                 if f.debt > 0:
                     history_for_bank.append((f.lmbda, 0))
-            f.owner.recalulate_human_wealth()
 
         cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
         self.bank.c_history.extend(cleaned)
@@ -562,21 +563,29 @@ class SimulationEngine:
         history_for_bank = []
         for f in self.k_firms:
             f.wage_bill = len(f.staff) * self.wage_rate
+            f.forecast_error = f.production - (f.sales + f.queue)
             f.depreciate_capital()
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
+                self.bank.losses += f.intresses
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
                 if f.debt > 0:
                     history_for_bank.append((f.lmbda, 0))
 
-            f.owner.recalulate_human_wealth()
-
         cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
         self.bank.k_history.extend(cleaned)
 
+        net_bank_profit = self.bank.intresses - self.bank.losses
+        bank_dividends = self.bank.dividends()
+        if bank_dividends > 0 and self.capitalists:
+            per_owner_dividend = bank_dividends / len(self.capitalists)
+            for capitalist in self.capitalists:
+                capitalist.wealth += per_owner_dividend
+
+        self.bank.equity += net_bank_profit - bank_dividends
         self.to_process_bankruptcies = bankrupt
 
 

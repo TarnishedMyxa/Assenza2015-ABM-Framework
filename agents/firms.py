@@ -27,11 +27,14 @@ class BaseFirm:
         self.inventory = 0.0  # Delta (Unsold goods)
         self.queue=0
         self.expected_demand = 0.0  # Y_e
+        self.forecast_error = 0.0
         self.intresses=0
         self.investment_cost=0
         self.wage_bill=0
         self.wear_and_tear = 0
         self.capital_apreciation = 0
+        self.pending_dividend = 0.0
+        self.dividend_payment = 0.0
 
         # Injected Parameters (from YAML)
         self.labour_prod = labour_prod  # w
@@ -58,24 +61,44 @@ class BaseFirm:
 
 
     def dividends(self):
-        self.profit = self.sales * self.price - self.intresses - self.wage_bill - self.wear_and_tear + self.capital_apreciation
+        gross_profit = self.sales * self.price - self.intresses - self.wage_bill - self.wear_and_tear + self.capital_apreciation
+        self.profit = gross_profit - self.dividend_payment
 
         if self.profit > 0 and self.liquidity > 0:
-            div= self.profit * self.tau
-            div=min(div, self.liquidity)
-            self.liquidity -= div
-            self.owner.wealth += div
-            self.owner.income += div
+            self.pending_dividend = min(self.profit * self.tau, self.liquidity)
+        else:
+            self.pending_dividend = 0.0
+
+        return self.pending_dividend
 
     def get_adjustment_shock(self):
         """Returns a random price adjustment factor U(0, 0.1)."""
         return random.uniform(0, 0.1)
+
+    def enforce_min_output(self, quantity):
+        if quantity <= 0:
+            return 0.0
+        return max(quantity, self.labour_prod)
 
     def receive_loan(self, amount, rate):
         """Updates debt and liquidity upon receiving a loan."""
         self.loans.append(loan(amount, rate))
         self.debt += amount
         self.liquidity += amount
+
+    def pay_scheduled_dividend(self):
+        self.dividend_payment = 0.0
+        if self.pending_dividend <= 0 or self.liquidity <= 0:
+            self.pending_dividend = 0.0
+            return 0.0
+
+        div = min(self.pending_dividend, self.liquidity)
+        self.pending_dividend = 0.0
+        self.dividend_payment = div
+        self.liquidity -= div
+        self.owner.wealth += div
+        self.owner.income += div
+        return div
 
     def pay_intress(self, bank):
         self.intresses = 0
@@ -130,7 +153,6 @@ class BaseFirm:
 
     def process_bankruptcy(self, bank, k_price):
         owner_wealth = max(self.owner.wealth, 0.0)
-        bank.losses += self.get_loans() - self.liquidity
 
         for worker in self.staff:
             worker.employed = False
@@ -152,11 +174,14 @@ class BaseFirm:
         self.inventory = 0.0
         self.queue = 0
         self.expected_demand = self.initial_production
+        self.forecast_error = 0.0
         self.intresses = 0
         self.investment_cost = 0
         self.wage_bill = 0
         self.wear_and_tear = 0
         self.capital_apreciation = 0
+        self.pending_dividend = 0.0
+        self.dividend_payment = 0.0
         self.loans = []
         self.labour_demand = 0.0
         self.staff = []
@@ -208,12 +233,13 @@ class ConsumptionFirm(BaseFirm):
         self.desired_capital=15
 
 
-    def adjust_price_and_output(self, market_avg_price):
+    def adjust_price_and_output(self, market_avg_price, k_goods_price):
 
         """
         Adaptive rule for Price (P) and Desired Output (Y*).
         """
         eta = self.get_adjustment_shock()
+        min_price = self.get_min_price(k_goods_price)
 
         delta = self.inventory - self.queue
         self.expected_demand = self.production
@@ -236,7 +262,8 @@ class ConsumptionFirm(BaseFirm):
             self.planned_production= self.initial_production
             self.first_step = False
 
-        self.planned_production = max(self.planned_production, 0)
+        self.price = max(self.price, min_price)
+        self.planned_production = self.enforce_min_output(self.planned_production)
 
     def calculate_labor_demand(self):
         """Calculates labor demand based on planned production and capital."""
@@ -343,6 +370,13 @@ class ConsumptionFirm(BaseFirm):
         self.production = min(self.capital * self.kappa, self.labour_prod * len(self.staff) )
         self.inventory = self.production   # Notice that if there was any inventory before it is gone now
 
+    def get_min_price(self, k_price):
+        unit_labor_cost = self.wage / self.labour_prod
+        if self.kappa <= 0:
+            return unit_labor_cost
+        unit_capital_cost = (self.delta * k_price) / self.kappa
+        return max(unit_labor_cost + unit_capital_cost, 1e-8)
+
     def depreciate_capital(self, k_price):
         """Updates capital stock: K_t+1 = (1 - delta*util)K + I """
         utilization = self.production / (self.capital * self.kappa) if self.capital > 0 else 0
@@ -395,7 +429,8 @@ class CapitalFirm(BaseFirm):
         Adaptive logic for K-market.
         """
         eta = self.get_adjustment_shock()
-        delta = self.inventory - self.queue
+        delta = self.forecast_error
+        carried_inventory = self.inventory
         self.expected_demand = self.production
         self.planned_production = self.production
 
@@ -403,20 +438,20 @@ class CapitalFirm(BaseFirm):
             self.price *= (1 + eta)
         elif delta > 0 and self.price > market_avg_price:
             self.price *= (1 - eta)
-            self.price =max(self.price, 0.5)
         elif delta <= 0 and self.price >= market_avg_price:
             self.expected_demand = self.production + self.rho * (-delta)
-            self.planned_production = self.expected_demand
+            self.planned_production = self.expected_demand - carried_inventory
         elif delta > 0 and self.price <= market_avg_price:
             self.expected_demand = self.production - self.rho * delta
-            self.planned_production = self.expected_demand
+            self.planned_production = self.expected_demand - carried_inventory
 
         if self.first_step:
             self.expected_demand = self.initial_production
             self.planned_production = self.initial_production
             self.first_step = False
 
-        self.planned_production = max(self.planned_production, 0)
+        self.price = max(self.price, self.get_min_price())
+        self.planned_production = self.enforce_min_output(self.planned_production)
         self.queue = 0
 
     def calculate_labor_demand(self):
@@ -468,6 +503,9 @@ class CapitalFirm(BaseFirm):
         self.equity = k_price * self.inventory + self.liquidity - self.get_loans()
 
         return self.equity
+
+    def get_min_price(self):
+        return max(self.wage / self.labour_prod, 1e-8)
 
     def _reset_after_bankruptcy(self, owner_wealth, k_price):
         self._reset_common_state(owner_wealth)

@@ -11,6 +11,7 @@ class Household:
                  cons_propensity=0.05):
         self.id = agent_id
         self.wealth = initial_wealth  # D_c (Financial Wealth/Deposits)
+        self.budget_wealth = max(0, initial_wealth)
         self.human_wealth = 1.0  # Y*_c (Permanent Income proxy) — init to wage_rate
         self.spent_amount = 0.0
         self.expected_income = 0.0  # Expected income this period (wage if employed, dividends)
@@ -22,12 +23,12 @@ class Household:
 
     def determine_budget(self):
         """
-        Calculates consumption budget: C = min(Y* + χD, D)
-        Deposits must stay non-negative — agents can spend current income
-        but cannot go into debt.
+        Desired consumption budget: C = Y* + χD.
+        The goods market enforces the cash-on-hand constraint so
+        deposits stay non-negative.
         """
-        D = max(0, self.wealth)
-        self.budget = min(self.human_wealth + self.chi * D, D)
+        D = self.budget_wealth
+        self.budget = self.human_wealth + self.chi * D
         self.budget = max(0, self.budget)
         return self.budget
 

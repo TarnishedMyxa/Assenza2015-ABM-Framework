@@ -19,8 +19,8 @@ settings = {
 rm = runManager(settings)
 run = rm.create_new_run()
 
-PERIODS = 1000
-TRANSIENT = 200
+PERIODS = 3000
+TRANSIENT = 1000
 gdp_series = []
 employment_series = []
 bank_equity_series = []
@@ -73,7 +73,7 @@ for t in range(PERIODS):
     total_demand = sum(h.budget for h in run.workers) + sum(h.budget for h in run.capitalists)
     total_demand_series.append(total_demand)
 
-    if (t + 1) <= 10 or (t + 1) % 50 == 0:
+    if (t + 1) <= 10 or (t + 1) % 100 == 0:
         k_inv = sum(f.inventory for f in run.k_firms)
         k_prod = sum(f.production for f in run.k_firms)
         c_invest = sum(f.planned_investment for f in run.c_firms)
@@ -189,11 +189,14 @@ if TRANSIENT < PERIODS:
         log_gdp_post = np.log(pos_post)
         try:
             from statsmodels.tsa.filters.hp_filter import hpfilter
-            cycle_post, _ = hpfilter(log_gdp_post, lamb=1600)
-            print(f"\n  HP-filtered log GDP:")
+            cycle_post, trend_post = hpfilter(log_gdp_post, lamb=1600)
+            print(f"\n  HP-filtered log GDP (post-transient):")
             print(f"    Std dev of cycle: {np.std(cycle_post)*100:.2f}% (target: ~1.66%)")
-            if len(log_gdp_post) > 2:
-                ac1 = np.corrcoef(log_gdp_post[:-1], log_gdp_post[1:])[0, 1]
-                print(f"    Autocorrelation(1) of log GDP: {ac1:.3f} (target: ~0.85)")
+            if len(cycle_post) > 2:
+                ac1 = np.corrcoef(cycle_post[:-1], cycle_post[1:])[0, 1]
+                print(f"    Autocorrelation(1) of cycle: {ac1:.3f} (target: ~0.85)")
+            if len(cycle_post) > 3:
+                ac2 = np.corrcoef(cycle_post[:-2], cycle_post[2:])[0, 1]
+                print(f"    Autocorrelation(2) of cycle: {ac2:.3f}")
         except ImportError:
             print("  (statsmodels not available — skipping HP filter stats)")
