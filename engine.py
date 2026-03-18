@@ -37,7 +37,7 @@ class runManager:
 
     def create_new_run(self, name=None, start_seed=None ):
         if start_seed is None:
-            start_seed = random.randint(0, 1e10)
+            start_seed = random.randint(0, int(1e10))
 
 
         runid = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890', k=15))
@@ -274,7 +274,7 @@ class SimulationEngine:
                 investment_prob=self.config['firms']['c_sector']['investment_probability'],
                 investment_memory=self.config['firms']['c_sector']['investment_memory'],
                 desired_utilization=self.config['firms']['c_sector']['desired_utilization'],
-                labour_prod=self.config['firms']['k_sector']['labor_productivity'],  # same l productivity for both k and c firms
+                labour_prod=self.config['firms']['k_sector']['labor_productivity'],
                 search_count=self.config['firms']['c_sector']['search_k_firms']
             )
             # Inject behavioral parameters
@@ -285,6 +285,7 @@ class SimulationEngine:
             cf.delta = self.config['firms']['c_sector']['capital_depreciation']
             cf.kappa = self.config['firms']['c_sector']['capital_productivity']
             cf.initial_production = self.config['firms']['c_sector']['initial_production']
+            cf.production = cf.initial_production  # So plan_invest() has valid production in period 1
             cf.expected_demand = cf.initial_production
             cf.wage=self.wage_rate
             self.c_firms.append(cf)
@@ -306,8 +307,8 @@ class SimulationEngine:
             )
             kf.rho = self.config['firms']['quantity_adjustment']
             kf.eta_max = self.config['firms']['price_adjustment_max']
-            kf.alpha = self.config['firms']['k_sector']['labor_productivity']
             kf.initial_production = self.config['firms']['k_sector']['initial_production']
+            kf.production = kf.initial_production  # So first-period adjust has valid production
             kf.expected_demand = kf.initial_production
 
             kf.wage=self.wage_rate
@@ -338,7 +339,7 @@ class SimulationEngine:
 
         self.current_step_start_state = random.getstate()
 
-        self.current_step_id=random.randint(0, 1e9)
+        self.current_step_id=random.randint(0, int(1e9))
         self.current_step += 1
 
         # 1. FIRMS' PLANNING: Decide production and investment
@@ -351,6 +352,9 @@ class SimulationEngine:
             f.process_bankruptcy(self.bank, self.avg_p_k)
 
         self.bank.equity += - self.bank.losses
+        # Bank bailout: recapitalize if equity goes negative
+        if self.bank.equity <= 0:
+            self.bank.equity = self.config['bank']['initial_equity'] * 0.5
         self.bank.divs=0
 
         for cf in self.c_firms:
@@ -386,11 +390,13 @@ class SimulationEngine:
         # 5. CAPITAL MARKET: C-firms shop (matching Zk)
         self._resolve_capital_market()
 
+        # 5.5. PAY WAGES + UPDATE HUMAN WEALTH (before goods market so workers have income for budgeting)
+        self._pay_wages_and_update_income()
+
         # 6. GOODS MARKET: Households shop (matching Zc)
         self._resolve_goods_market()
 
-        # 7. ACCOUNTING: Update bank equity, firm dividends, etc.
-        #data.append(0)
+        # 7. ACCOUNTING: Interest, dividends, depreciation, bankruptcy
         self._perform_accounting([])
 
         self.current_step_end_state = random.getstate()
@@ -404,7 +410,8 @@ class SimulationEngine:
             if gap > 0:
                 # Bank sets rate and determines loan amount
                 leverage= firm.calculate_leverage(gap)
-                rate, phi = self.bank.set_interest_rate(leverage)
+                firm_type = 'K' if isinstance(firm, CapitalFirm) else 'C'
+                rate, phi = self.bank.set_interest_rate(leverage, firm_type)
                 loan_granted = self.bank.get_credit_limit(firm.debt, phi )
                 if loan_granted > 0:
                     firm.receive_loan(min(gap, loan_granted), rate)
@@ -422,22 +429,28 @@ class SimulationEngine:
         all_firms = self.c_firms + self.k_firms
         num_firms = len(all_firms)
 
-        demands_cache = np.array([f.labour_demand for f in all_firms], dtype=np.int32)
+        if num_firms == 0:
+            return
 
-        samples = np.random.randint(0, num_firms, size=(len(unemployed), self.ze))
+        sample_size = min(self.ze, num_firms)
+        demands_cache = np.array(
+            [math.ceil(max(f.labour_demand, 0)) for f in all_firms],
+            dtype=np.int32
+        )
 
-        for i, worker in enumerate(unemployed):
-            firm_indices = samples[i]
-            sampled_demands = demands_cache[firm_indices]
-            local_idx = np.argmax(sampled_demands)
-            best_f_idx = firm_indices[local_idx]
-            if demands_cache[best_f_idx] > 0:
-                best_employer = all_firms[best_f_idx]
-                demands_cache[best_f_idx] -= 1
-                best_employer.labour_demand -= 1
-                best_employer.staff.append(worker)
+        for worker in unemployed:
+            firm_indices = np.random.choice(num_firms, size=sample_size, replace=False)
+            for firm_idx in firm_indices:
+                if demands_cache[firm_idx] <= 0:
+                    continue
+
+                employer = all_firms[firm_idx]
+                demands_cache[firm_idx] -= 1
+                employer.labour_demand = max(employer.labour_demand - 1, 0)
+                employer.staff.append(worker)
                 worker.employed = True
-                worker.employer = best_employer
+                worker.employer = employer
+                break
 
     def _resolve_goods_market(self):
         """Households visit Zc firms to consume."""
@@ -447,23 +460,23 @@ class SimulationEngine:
         np.random.shuffle(shoppers)
 
         num_firms = len(sorted_c_firms)
+        if num_firms == 0:
+            return
 
-        all_indices = np.random.randint(0, num_firms, size=(len(shoppers), self.ze))
+        sample_size = min(self.zc, num_firms)
 
-        for i, h in enumerate(shoppers):
-            visited_indices = all_indices[i]
-
-            visited_indices.sort()
+        for h in shoppers:
+            visited_indices = np.random.choice(num_firms, size=sample_size, replace=False)
+            visited_firms = [sorted_c_firms[idx] for idx in visited_indices]
+            visited_firms.sort(key=lambda f: f.price)
 
             h.determine_budget()
             remaining_budget = h.budget
             h.spent_amount = 0.0
 
-            for idx in visited_indices:
+            for firm in visited_firms:
                 if remaining_budget <= 0:
                     break
-
-                firm = sorted_c_firms[idx]
 
                 if firm.inventory <= 0:
                     continue
@@ -474,6 +487,8 @@ class SimulationEngine:
                 actual_qty = min(desired_qty, firm.inventory)
                 firm.inventory -= actual_qty
                 firm.sales += actual_qty
+                if actual_qty < desired_qty:
+                    firm.queue += desired_qty - actual_qty
 
                 cost = actual_qty * price
                 remaining_budget -= cost
@@ -481,30 +496,31 @@ class SimulationEngine:
 
                 firm.liquidity += cost
 
-            if remaining_budget > 0:
-                q_price = firm.price
-                firm.queue += remaining_budget / q_price
-
 
     def _resolve_capital_market(self):
         """C-firms visit Zk K-firms to buy Capital goods"""
         for cf in self.c_firms:
             cf.shop(self.k_firms)
 
-    def _perform_accounting(self, data):
-        """Handle accounting"""
-
-        for h in self.workers :
-            #get wage and spend money on consumption
+    def _pay_wages_and_update_income(self):
+        """Pay wages and update human_wealth BEFORE goods market."""
+        for h in self.workers:
             if h.employed:
-                h.wealth += self.wage_rate - h.spent_amount
+                h.wealth += self.wage_rate
                 h.employer.liquidity -= self.wage_rate
+                h.recalculate_human_wealth(self.wage_rate)
             else:
-                h.wealth += - h.spent_amount
-            h.recalculate_human_wealth(self.wage_rate)
+                h.recalculate_human_wealth(0.0)
+
+    def _perform_accounting(self, data):
+        """Handle post-market accounting: spending deduction, interest, dividends, bankruptcy."""
+
+        # Deduct spending from wealth
+        for h in self.workers:
+            h.wealth -= h.spent_amount
 
         for c in self.capitalists:
-            c.wealth +=  - c.spent_amount
+            c.wealth -= c.spent_amount
 
         self.bank.intresses=0
         for f in self.c_firms:
@@ -553,7 +569,8 @@ class SimulationEngine:
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
-                history_for_bank.append((f.lmbda, 0))
+                if f.debt > 0:
+                    history_for_bank.append((f.lmbda, 0))
 
             f.owner.recalulate_human_wealth()
 

@@ -31,11 +31,11 @@ class Bank:
         self.c_model = None
         self.k_model = None
 
-        self.c_model_coefficient = 12
-        self.c_model_intercept = -2.5
+        self.c_model_coefficient = 3
+        self.c_model_intercept = -4
 
-        self.k_model_coefficient = 12
-        self.k_model_intercept = -2.5
+        self.k_model_coefficient = 3
+        self.k_model_intercept = -4
 
     def estimate_logistic_failure_prob(self):
         """
@@ -119,7 +119,7 @@ class Bank:
 
         xi_T = (1 - (1 - self.theta) ** (expected_T + 1)) / self.theta
 
-        r=self.mu *( (1+self.r/self.theta)/xi_T ) - self.theta
+        r=self.mu *( (1+self.r)/xi_T ) - self.theta
 
         return max(r, self.r), phi
 
@@ -128,7 +128,7 @@ class Bank:
         Rationing based on Equations 8.12 and bank exposure.
         """
         available_credit = (self.zeta * self.equity - phi * current_debt) / phi
-        available_credit =min(available_credit, self.equity * 0.1)
+        # Removed 10% cap — not in Assenza et al. (2015)
 
         return max(0, available_credit)
 
