@@ -46,3 +46,29 @@ bank:
   markup: 1.2                  # µ (mu): Bank’s gross mark-up
   loss_parameter: 0.002        # ζ (zeta): bank’s loss parameter
   debt_installment_rate: 0.05  # θ (theta): Installment on Debt (repayment)
+
+# Internal experiment switches for replication work
+experiments:
+  diagnostics: false
+  kfirm:
+    use_cost_price_floor: false
+    enforce_min_output: false
+    use_forecast_error_delta: false
+    subtract_carried_inventory: false
+  capital_market:
+    shuffle_buyers: false
+  bank:
+    credit_limit_mode: current
+    dividend_ratio_override:
+    c_history_window_override:
+    k_history_window_override:
+    c_min_fit_observations: 50
+    k_min_fit_observations: 50
+    c_fit_enabled: true
+    k_fit_enabled: true
+    c_logit_coefficient_override:
+    c_logit_intercept_override:
+    k_logit_coefficient_override:
+    k_logit_intercept_override:
+    c_phi_cap:
+    k_phi_cap:

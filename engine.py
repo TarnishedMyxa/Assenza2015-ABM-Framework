@@ -6,8 +6,41 @@ from mysql_connector.mnemosyne import *
 import math
 import yaml
 import os
+import json
 from dotenv import load_dotenv
 import pickle
+
+
+def ensure_experiment_defaults(config):
+    experiments = config.setdefault("experiments", {})
+    experiments.setdefault("diagnostics", False)
+
+    kfirm = experiments.setdefault("kfirm", {})
+    kfirm.setdefault("use_cost_price_floor", False)
+    kfirm.setdefault("enforce_min_output", False)
+    kfirm.setdefault("use_forecast_error_delta", False)
+    kfirm.setdefault("subtract_carried_inventory", False)
+
+    capital_market = experiments.setdefault("capital_market", {})
+    capital_market.setdefault("shuffle_buyers", False)
+
+    bank = experiments.setdefault("bank", {})
+    bank.setdefault("credit_limit_mode", "current")
+    bank.setdefault("dividend_ratio_override", None)
+    bank.setdefault("c_history_window_override", None)
+    bank.setdefault("k_history_window_override", None)
+    bank.setdefault("c_min_fit_observations", 50)
+    bank.setdefault("k_min_fit_observations", 50)
+    bank.setdefault("c_fit_enabled", True)
+    bank.setdefault("k_fit_enabled", True)
+    bank.setdefault("c_logit_coefficient_override", None)
+    bank.setdefault("c_logit_intercept_override", None)
+    bank.setdefault("k_logit_coefficient_override", None)
+    bank.setdefault("k_logit_intercept_override", None)
+    bank.setdefault("c_phi_cap", None)
+    bank.setdefault("k_phi_cap", None)
+
+    return config
 
 
 class runManager:
@@ -24,11 +57,13 @@ class runManager:
             }
             self.config = fetch_config_from_db(self.db_creds, self.settings["db_config_id"])
             self.config['config_id'] = self.settings["db_config_id"]
+            ensure_experiment_defaults(self.config)
             print(f"Config fetched from DB with ID: {self.settings['db_config_id']}")
         else:
             self.db_creds=None
             with open(self.settings["yaml_config_path"], "r", encoding="utf-8") as f:
                 self.config = yaml.safe_load(f)
+                ensure_experiment_defaults(self.config)
                 print("YAML CONFIG LOADED")
                 if self.settings["create_new_config_in_db"]:
                     cnf_id = send_config_to_db(self.db_creds, self.config)
@@ -204,7 +239,8 @@ class SimulationEngine:
         self.runid = runid
         self.name = name
         self.start_seed = start_seed
-        self.config = config
+        self.config = ensure_experiment_defaults(config)
+        self.experiments = self.config["experiments"]
         self.current_step = 0
         self.ze = self.config['households']['search_intensity']['labor']
         self.ledger = Ledger()
@@ -218,6 +254,10 @@ class SimulationEngine:
         self.deposits = {}
         self.time_processing={}
         self.to_process_bankruptcies=[]
+        self.diagnostics_enabled = self.experiments["diagnostics"]
+        self.last_step_diagnostics = {}
+        self.step_diagnostics_history = []
+        self._step_metrics = None
 
         # Setup the world
         self._setup_agents()
@@ -241,7 +281,48 @@ class SimulationEngine:
             markup=self.config['bank']['markup'],
             zeta=self.config['bank']['loss_parameter'],
             theta=self.config['bank']['debt_installment_rate'],
-            dividend_ratio=self.config['firms']['dividend_payout_ratio']
+            window_c=(
+                self.experiments["bank"]["c_history_window_override"]
+                if self.experiments["bank"]["c_history_window_override"] is not None
+                else 1000
+            ),
+            window_k=(
+                self.experiments["bank"]["k_history_window_override"]
+                if self.experiments["bank"]["k_history_window_override"] is not None
+                else 1000
+            ),
+            dividend_ratio=(
+                self.experiments["bank"]["dividend_ratio_override"]
+                if self.experiments["bank"]["dividend_ratio_override"] is not None
+                else self.config['firms']['dividend_payout_ratio']
+            ),
+            credit_limit_mode=self.experiments["bank"]["credit_limit_mode"],
+            c_fit_enabled=self.experiments["bank"]["c_fit_enabled"],
+            k_fit_enabled=self.experiments["bank"]["k_fit_enabled"],
+            c_min_fit_observations=self.experiments["bank"]["c_min_fit_observations"],
+            k_min_fit_observations=self.experiments["bank"]["k_min_fit_observations"],
+            c_logit_coefficient=(
+                self.experiments["bank"]["c_logit_coefficient_override"]
+                if self.experiments["bank"]["c_logit_coefficient_override"] is not None
+                else 3.0
+            ),
+            c_logit_intercept=(
+                self.experiments["bank"]["c_logit_intercept_override"]
+                if self.experiments["bank"]["c_logit_intercept_override"] is not None
+                else -4.0
+            ),
+            k_logit_coefficient=(
+                self.experiments["bank"]["k_logit_coefficient_override"]
+                if self.experiments["bank"]["k_logit_coefficient_override"] is not None
+                else 3.0
+            ),
+            k_logit_intercept=(
+                self.experiments["bank"]["k_logit_intercept_override"]
+                if self.experiments["bank"]["k_logit_intercept_override"] is not None
+                else -4.0
+            ),
+            c_phi_cap=self.experiments["bank"]["c_phi_cap"],
+            k_phi_cap=self.experiments["bank"]["k_phi_cap"]
         )
 
         # 2. Setup Households
@@ -313,6 +394,10 @@ class SimulationEngine:
             kf.expected_demand = kf.initial_production
 
             kf.wage=self.wage_rate
+            kf.use_cost_price_floor = self.experiments["kfirm"]["use_cost_price_floor"]
+            kf.use_min_output_rule = self.experiments["kfirm"]["enforce_min_output"]
+            kf.use_forecast_error_delta = self.experiments["kfirm"]["use_forecast_error_delta"]
+            kf.subtract_carried_inventory = self.experiments["kfirm"]["subtract_carried_inventory"]
             self.k_firms.append(kf)
             total_money+=self.config['firms']['initial_liquidity']
 
@@ -331,6 +416,79 @@ class SimulationEngine:
 
         self.bank.reserves=total_money
 
+    def _get_total_debt_stock(self):
+        return sum(f.debt for f in self.c_firms) + sum(f.debt for f in self.k_firms)
+
+    def _start_step_diagnostics(self):
+        self._step_metrics = {
+            "step": self.current_step,
+            "opening_bank_equity": float(self.bank.equity),
+            "opening_debt_stock": float(self._get_total_debt_stock()),
+            "new_loans_granted": 0.0,
+            "c_loans_granted": 0.0,
+            "k_loans_granted": 0.0,
+            "c_credit_requested": 0.0,
+            "k_credit_requested": 0.0,
+            "c_credit_capacity": 0.0,
+            "k_credit_capacity": 0.0,
+            "interest_received": 0.0,
+            "principal_repaid": 0.0,
+            "bad_debt_losses": 0.0,
+            "bank_dividends": 0.0,
+            "c_bankruptcies": 0,
+            "k_bankruptcies": 0,
+            "c_leverage_requests": [],
+            "k_leverage_requests": [],
+            "c_phi_requests": [],
+            "k_phi_requests": [],
+            "c_rate_requests": [],
+            "k_rate_requests": [],
+        }
+
+    def _finalize_step_diagnostics(self):
+        metrics = dict(self._step_metrics or {})
+        c_lev = metrics.pop("c_leverage_requests", [])
+        k_lev = metrics.pop("k_leverage_requests", [])
+        c_phi = metrics.pop("c_phi_requests", [])
+        k_phi = metrics.pop("k_phi_requests", [])
+        c_rate = metrics.pop("c_rate_requests", [])
+        k_rate = metrics.pop("k_rate_requests", [])
+        metrics["mean_c_leverage"] = float(np.mean(c_lev)) if c_lev else 0.0
+        metrics["mean_k_leverage"] = float(np.mean(k_lev)) if k_lev else 0.0
+        metrics["mean_c_phi"] = float(np.mean(c_phi)) if c_phi else 0.0
+        metrics["mean_k_phi"] = float(np.mean(k_phi)) if k_phi else 0.0
+        metrics["mean_c_rate"] = float(np.mean(c_rate)) if c_rate else 0.0
+        metrics["mean_k_rate"] = float(np.mean(k_rate)) if k_rate else 0.0
+        metrics["c_logit_coefficient"] = float(self.bank.c_model_coefficient)
+        metrics["c_logit_intercept"] = float(self.bank.c_model_intercept)
+        metrics["k_logit_coefficient"] = float(self.bank.k_model_coefficient)
+        metrics["k_logit_intercept"] = float(self.bank.k_model_intercept)
+        metrics["c_history_size"] = len(self.bank.c_history)
+        metrics["k_history_size"] = len(self.bank.k_history)
+        metrics["phi_c_at_one"] = float(self.bank.get_bankruptcy_prob(0.9999, 'C'))
+        metrics["phi_k_at_one"] = float(self.bank.get_bankruptcy_prob(0.9999, 'K'))
+        c_requested = metrics.get("c_credit_requested", 0.0)
+        k_requested = metrics.get("k_credit_requested", 0.0)
+        metrics["c_grant_share"] = float(metrics["c_loans_granted"] / c_requested) if c_requested > 0 else 0.0
+        metrics["k_grant_share"] = float(metrics["k_loans_granted"] / k_requested) if k_requested > 0 else 0.0
+        metrics["c_capacity_share"] = float(metrics["c_credit_capacity"] / c_requested) if c_requested > 0 else 0.0
+        metrics["k_capacity_share"] = float(metrics["k_credit_capacity"] / k_requested) if k_requested > 0 else 0.0
+        planned_investment_total = sum(cf.planned_investment for cf in self.c_firms)
+        realized_investment_total = sum(kf.sales for kf in self.k_firms)
+        metrics["planned_investment_total"] = float(planned_investment_total)
+        metrics["realized_investment_total"] = float(realized_investment_total)
+        metrics["investment_fulfillment"] = (
+            float(realized_investment_total / planned_investment_total)
+            if planned_investment_total > 0 else 0.0
+        )
+        metrics["k_queue_total"] = float(sum(kf.queue for kf in self.k_firms))
+        metrics["k_inventory_total"] = float(sum(kf.inventory for kf in self.k_firms))
+        metrics["closing_bank_equity"] = float(self.bank.equity)
+        metrics["closing_debt_stock"] = float(self._get_total_debt_stock())
+        self.last_step_diagnostics = metrics
+        if self.diagnostics_enabled:
+            self.step_diagnostics_history.append(metrics)
+
 
     def run_step(self):
         """
@@ -342,6 +500,7 @@ class SimulationEngine:
 
         self.current_step_id=random.randint(0, int(1e9))
         self.current_step += 1
+        self._start_step_diagnostics()
 
         # 1. FIRMS' PLANNING: Decide production and investment
         # Use average prices from previous period for adaptive heuristics
@@ -407,10 +566,26 @@ class SimulationEngine:
                 # Bank sets rate and determines loan amount
                 leverage= firm.calculate_leverage(gap)
                 firm_type = 'K' if isinstance(firm, CapitalFirm) else 'C'
+                leverage_key = 'k_leverage_requests' if firm_type == 'K' else 'c_leverage_requests'
+                requested_key = 'k_credit_requested' if firm_type == 'K' else 'c_credit_requested'
+                capacity_key = 'k_credit_capacity' if firm_type == 'K' else 'c_credit_capacity'
+                phi_key = 'k_phi_requests' if firm_type == 'K' else 'c_phi_requests'
+                rate_key = 'k_rate_requests' if firm_type == 'K' else 'c_rate_requests'
+                self._step_metrics[leverage_key].append(float(leverage))
+                self._step_metrics[requested_key] += float(gap)
                 rate, phi = self.bank.set_interest_rate(leverage, firm_type)
-                loan_granted = self.bank.get_credit_limit(firm.debt, phi )
+                self._step_metrics[phi_key].append(float(phi))
+                self._step_metrics[rate_key].append(float(rate))
+                credit_capacity = self.bank.get_credit_limit(firm.debt, phi)
+                self._step_metrics[capacity_key] += float(credit_capacity)
+                loan_granted = min(gap, credit_capacity)
                 if loan_granted > 0:
-                    firm.receive_loan(min(gap, loan_granted), rate)
+                    firm.receive_loan(loan_granted, rate)
+                    self._step_metrics["new_loans_granted"] += float(loan_granted)
+                    if firm_type == 'K':
+                        self._step_metrics["k_loans_granted"] += float(loan_granted)
+                    else:
+                        self._step_metrics["c_loans_granted"] += float(loan_granted)
             firm.calculate_leverage(0)
 
     def _resolve_labor_market(self):
@@ -495,7 +670,10 @@ class SimulationEngine:
 
     def _resolve_capital_market(self):
         """C-firms visit Zk K-firms to buy Capital goods"""
-        for cf in self.c_firms:
+        buyers = list(self.c_firms)
+        if self.experiments["capital_market"]["shuffle_buyers"]:
+            np.random.shuffle(buyers)
+        for cf in buyers:
             cf.shop(self.k_firms)
 
     def _pay_household_income(self):
@@ -531,14 +709,18 @@ class SimulationEngine:
             c.wealth -= c.spent_amount
 
         self.bank.intresses=0
+        interest_received = 0.0
+        principal_repaid = 0.0
         for f in self.c_firms:
-            f.pay_intress(self.bank)
-            f.repay_loan()
+            interest_received += f.pay_intress(self.bank)
+            principal_repaid += f.repay_loan()
 
         for f in self.k_firms:
-            f.pay_intress(self.bank)
-            f.repay_loan()
+            interest_received += f.pay_intress(self.bank)
+            principal_repaid += f.repay_loan()
 
+        self._step_metrics["interest_received"] = float(interest_received)
+        self._step_metrics["principal_repaid"] = float(principal_repaid)
 
         bankrupt=[]
         history_for_bank=[]
@@ -551,6 +733,8 @@ class SimulationEngine:
             if f.check_bankruptcy():
                 bankrupt.append(f)
                 self.bank.losses += f.intresses
+                self._step_metrics["bad_debt_losses"] += float(f.intresses)
+                self._step_metrics["c_bankruptcies"] += 1
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
@@ -569,6 +753,8 @@ class SimulationEngine:
             if f.check_bankruptcy():
                 bankrupt.append(f)
                 self.bank.losses += f.intresses
+                self._step_metrics["bad_debt_losses"] += float(f.intresses)
+                self._step_metrics["k_bankruptcies"] += 1
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
@@ -580,6 +766,7 @@ class SimulationEngine:
 
         net_bank_profit = self.bank.intresses - self.bank.losses
         bank_dividends = self.bank.dividends()
+        self._step_metrics["bank_dividends"] = float(bank_dividends)
         if bank_dividends > 0 and self.capitalists:
             per_owner_dividend = bank_dividends / len(self.capitalists)
             for capitalist in self.capitalists:
@@ -587,6 +774,7 @@ class SimulationEngine:
 
         self.bank.equity += net_bank_profit - bank_dividends
         self.to_process_bankruptcies = bankrupt
+        self._finalize_step_diagnostics()
 
 
 def send_config_to_db(db_creds, config):
