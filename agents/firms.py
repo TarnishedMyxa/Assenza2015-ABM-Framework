@@ -526,11 +526,11 @@ class CapitalFirm(BaseFirm):
 
     def check_bankruptcy(self):
         debt = self.get_loans()
-        self.equity = self.liquidity - debt
+        self.equity = self.liquidity + self.price * self.inventory - debt
         return self.equity <= 0
 
     def update_equity(self, k_price):
-        self.equity = self.liquidity - self.get_loans()
+        self.equity = self.liquidity + self.price * self.inventory - self.get_loans()
 
         return self.equity
 
