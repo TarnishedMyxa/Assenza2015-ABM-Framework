@@ -184,7 +184,7 @@ class ConsumptionFirm(BaseFirm):
         # 1. Price Decision
         if self.inventory > 0 and self.price >= market_avg_price:
             self.price *= (1 - eta)
-        elif self.inventory - self.queue< 0 and self.price <= market_avg_price:
+        elif self.inventory - self.queue <= 0 and self.price < market_avg_price:
             self.price *= (1 + eta)
 
         # 2. Quantity Decision (Desired Production)
@@ -312,8 +312,8 @@ class ConsumptionFirm(BaseFirm):
         self.capital = (1 - self.delta * utilization) * self.capital
 
     def update_equity(self, k_price):
-        #self.equity = k_price * self.capital + self.liquidity - self.get_loans()
-        self.equity =  self.liquidity - self.get_loans()
+        self.equity = k_price * self.capital + self.liquidity - self.get_loans()
+        #self.equity =  self.liquidity - self.get_loans()
 
         return self.equity
 
@@ -328,7 +328,7 @@ class ConsumptionFirm(BaseFirm):
 
         K_book = self.capital_book
         debt = self.get_loans()
-        self.equity =  self.liquidity - debt
+        self.equity =  self.liquidity - debt + K_book
         return self.equity <= 0
 
 
@@ -356,17 +356,19 @@ class CapitalFirm(BaseFirm):
         """
         eta = self.get_adjustment_shock()
 
-        if self.inventory > 0 and self.price > market_avg_price:
+        if self.inventory > 0 and self.price >= market_avg_price:
             self.price *= (1 - eta)
             self.price =max(self.price, 0.5)
-        elif self.inventory - self.queue<= 0 and self.price <= market_avg_price:
+        elif self.inventory - self.queue<= 0 and self.price < market_avg_price:
             self.price *= (1 + eta)
 
         # Quantity Adjustment
-        if self.inventory > 0:
-            self.planned_production = max(0, self.production - self.rho * self.inventory)
-        else:
-            self.planned_production = self.production + self.rho * abs(self.inventory - self.queue)
+        if self.inventory > 0 and self.price < market_avg_price:
+            # Excess Supply: Cut production
+            self.planned_production = self.production - self.rho * self.inventory
+        elif self.inventory - self.queue <= 0 and self.price >= market_avg_price:
+            # Excess Demand: Increase production
+            self.planned_production = self.production - self.rho * (self.inventory - self.queue)
 
 
         if self.first_step:
@@ -426,7 +428,7 @@ class CapitalFirm(BaseFirm):
 
     def update_equity(self, k_price):
         #self.equity = k_price * self.inventory + self.liquidity - self.get_loans()
-        self.equity =  self.liquidity - self.get_loans()
+        self.equity =  k_price * self.inventory + self.liquidity - self.get_loans()
 
         return self.equity
 

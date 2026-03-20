@@ -486,6 +486,7 @@ class SimulationEngine:
                 firm.queue += remaining_budget / q_price
 
 
+
     def _resolve_capital_market(self):
         """C-firms visit Zk K-firms to buy Capital goods"""
         for cf in self.c_firms:
@@ -536,8 +537,7 @@ class SimulationEngine:
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
-                if f.debt > 0:
-                    history_for_bank.append((f.lmbda, 0))
+                history_for_bank.append((f.lmbda, 0))
             f.owner.recalulate_human_wealth()
 
         cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
@@ -561,6 +561,11 @@ class SimulationEngine:
         self.bank.k_history.extend(cleaned)
 
         self.to_process_bankruptcies = bankrupt
+
+        for c in self.capitalists:
+            if c.spent_amount > 0 and c.budget == 0:
+                pass
+
 
 
 def send_config_to_db(db_creds, config):

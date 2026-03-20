@@ -12,7 +12,7 @@ db_creds = {
     'password': os.getenv("password"),
     'database': os.getenv("database")
 }
-runid="PvVpgXTKXpLEWqn"
+runid="gm7OSjRfMnJoveM"
 
 
 firm_data= get_firm_data(db_creds, "C_0", runid)
@@ -78,8 +78,8 @@ with open('worker_data.csv', mode='w', newline='', encoding='utf-8') as file:
 
 capitalist_data= get_capitalist_data(db_creds, "B_0", runid)
 headers = [
-    'step_no', 'steps_id', 'capitalist_id', 'wealth', 'human_wealth',
-    'spent_amount',  'budget'
+    'step_no', 'steps_id', 'capitalist_id', 'budget', 'wealth',
+    'human_wealth',  'spent_amount'
 ]
 with open('capitalist_data.csv', mode='w', newline='', encoding='utf-8') as file:
     writer = csv.writer(file)
@@ -94,7 +94,7 @@ with open('capitalist_data.csv', mode='w', newline='', encoding='utf-8') as file
         print("No data found for the specified Run ID and Capitalist ID.")
 
 
-liquidity= get_total_money_amount(db_creds)
+liquidity= get_total_money_amount(db_creds, runid)
 liquidity.to_csv('liquidity_data.csv', index=False)
 
 
@@ -111,53 +111,11 @@ with open('bank_data.csv', mode='w', newline='', encoding='utf-8') as file:
     else:
         print("No data found for the specified Run ID and Bank ID.")
 
+c_sales=get_c_sales(db_creds,runid)
+c_sales.to_csv('c_sales_data.csv', index=False)
 
-"""
-    SELECT s.run_id, s.step_no, cf.price
-    FROM steps s LEFT JOIN c_firms_data cf on s.step_id = cf.step_id
-    WHERE s.run_id = "zgx30YZd3ECh7iZ"
-
-simply_prices= get_simply_prices(db_creds)
-
-# plot price distribution over time
-steps = [step_no for run_id, step_no, price in simply_prices]
-prices = [price for run_id, step_no, price in simply_prices]
-plt.figure(figsize=(10, 5))
-plt.scatter(steps, prices, alpha=0.5)
-plt.title('Price Distribution of C Firms Over Time')
-plt.xlabel('Step No')
-plt.ylabel('Price')
-plt.grid()
-plt.show()
-"""
-
-
-"""
-prices=get_c_price_over_time(db_creds)
-
-# avg price= total_sales/total_qty
-avg_prices = []
-for run_id, step_no, total_qty, total_sales in prices:
-    avg_price = total_sales / total_qty if total_qty > 0 else 0
-    avg_prices.append((step_no, avg_price))
-
-# Plotting the average price over time
-steps = [step_no for step_no, avg_price in avg_prices]
-avg_price_values = [avg_price for step_no, avg_price in avg_prices]
-plt.figure(figsize=(10, 5))
-plt.plot(steps, avg_price_values, marker='o')
-plt.title('Average Price of C Firms Over Time')
-plt.xlabel('Step No')
-plt.ylabel('Average Price')
-plt.grid()
-plt.show()
-"""
+k_sales=get_k_sales(db_creds,runid)
+k_sales.to_csv('k_sales_data.csv', index=False)
 
 
 
-
-
-
-
-
-#unemployment= get_unemployment_rate_over_time(db_creds)

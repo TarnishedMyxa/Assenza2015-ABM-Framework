@@ -73,12 +73,9 @@ class Capitalist(Household):
         Updates human wealth based on dividends from the owned firm.
         Y*_c,t = ξ * Y*_c,t-1 + (1 - ξ) * dividends_t
         """
-        if self.human_wealth <=0.0000001:
-            pass
+
         self.human_wealth =max(0, (self.xi * self.human_wealth) + ((1 - self.xi) * self.income) )
 
-        if self.human_wealth <=0.0000001:
-            pass
 
 
     def recapitalize_firm(self):

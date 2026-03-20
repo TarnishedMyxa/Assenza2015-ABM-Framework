@@ -31,11 +31,11 @@ class Bank:
         self.c_model = None
         self.k_model = None
 
-        self.c_model_coefficient = 12
-        self.c_model_intercept = -2.5
+        self.c_model_coefficient = 5
+        self.c_model_intercept = -2
 
-        self.k_model_coefficient = 12
-        self.k_model_intercept = -2.5
+        self.k_model_coefficient = 5
+        self.k_model_intercept = -2
 
     def estimate_logistic_failure_prob(self):
         """
@@ -83,7 +83,7 @@ class Bank:
 
         if model is None:
             if self.c_model_coefficient is None or self.c_model_intercept is None:
-                return 0.5  # Default  risk before C model is trained
+                return 0.1  # Default  risk before C model is trained
             # Use C model parameters to calculate probability
             z = self.c_model_coefficient * leverage + self.c_model_intercept
             phi = 1 / (1 + np.exp(-z))
@@ -91,14 +91,14 @@ class Bank:
 
         if firm_type == 'C':
             if self.c_model_coefficient is None or self.c_model_intercept is None:
-                return 0.5  # Default  risk before C model is trained
+                return 0.1  # Default  risk before C model is trained
             # Use C model parameters to calculate probability
             z = self.c_model_coefficient * leverage + self.c_model_intercept
             phi = 1 / (1 + np.exp(-z))
             return phi
         else:
             if self.k_model_coefficient is None or self.k_model_intercept is None:
-                return 0.5  # Default risk before K model is trained
+                return 0.1  # Default risk before K model is trained
             # Use K model parameters to calculate probability
             z = self.k_model_coefficient * leverage + self.k_model_intercept
             phi = 1 / (1 + np.exp(-z))
@@ -119,7 +119,7 @@ class Bank:
 
         xi_T = (1 - (1 - self.theta) ** (expected_T + 1)) / self.theta
 
-        r=self.mu *( (1+self.r/self.theta)/xi_T ) - self.theta
+        r=self.mu *( (1+self.r/self.theta)/xi_T  - self.theta)
 
         return max(r, self.r), phi
 
@@ -128,7 +128,7 @@ class Bank:
         Rationing based on Equations 8.12 and bank exposure.
         """
         available_credit = (self.zeta * self.equity - phi * current_debt) / phi
-        available_credit =min(available_credit, self.equity * 0.1)
+        #available_credit =min(available_credit, self.equity * 0.1)
 
         return max(0, available_credit)
 
