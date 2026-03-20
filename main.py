@@ -6,9 +6,9 @@ import os
 
 
 #SETTINGS
-CONFIG="YAML"  # Could be "YAML" or "DB",
+CONFIG="DB"  # Could be "YAML" or "DB",
 yaml_config_path = "config.yaml"  # Path to YAML config file if using YAML
-create_new_config_in_db = False  # Whether to create a new config in the database or fetch an existing one
+create_new_config_in_db = True  # Whether to create a new config in the database or fetch an existing one
 db_config_id = 2  # ID of the config in the database if using DB
 
 

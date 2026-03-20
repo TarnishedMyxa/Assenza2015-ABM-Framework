@@ -122,14 +122,13 @@ class BaseFirm:
         return self.lmbda
 
     def process_bankruptcy(self, bank, k_price):
+
+        bank.losses += self.debt - self.liquidity
+        self.liquidity = 0
+        self.debt = 0
+
         self.liquidity += self.owner.wealth
         self.owner.wealth = 0
-        if self.liquidity >= self.debt:
-            self.liquidity -= self.debt
-        else:
-            bank.losses += self.debt - self.liquidity
-            self.liquidity = 0
-        self.debt = 0
         self.loans = []
         self.update_equity(k_price)
 
@@ -198,6 +197,7 @@ class ConsumptionFirm(BaseFirm):
 
         if self.first_step:
             self.planned_production= self.initial_production
+            self.production = self.initial_production
             self.first_step = False
 
     def calculate_labor_demand(self):

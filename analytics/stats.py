@@ -223,3 +223,25 @@ def get_k_sales(db_config, runid):
 
     return df_final
 
+
+def get_bankrupts(db_config, runid):
+    query = """
+    SELECT s.run_id, s.step_no, b.cf_id as idnum, b.equity, b.debt
+    FROM steps s LEFT JOIN c_firms_data b on s.step_id = b.step_id
+    WHERE s.run_id = '""" + str(runid) +"""'
+    AND b.equity < 0
+    GROUP BY s.run_id, s.step_no
+    
+    UNION ALL
+    
+    SELECT s.run_id, s.step_no, b.kf_id as idnum, b.equity, b.debt
+    FROM steps s LEFT JOIN kf_firms_data b on s.step_id = b.step_id
+    WHERE s.run_id = '""" + str(runid) +"""'
+    AND b.equity < 0
+    GROUP BY s.run_id, s.step_no
+    
+    """
+    bankrupts= execute_query(db_config, query)
+    df_bankrupts = pd.DataFrame(bankrupts, columns=['run_id', 'step_no', 'idnum', 'equity', 'debt'])
+    return df_bankrupts
+
