@@ -227,7 +227,6 @@ class ConsumptionFirm(BaseFirm):
         self.nu = investment_memory
         self.omega = desired_utilization
         self.desired_utilization = desired_utilization
-
         # Temporary State for the Step
         self.planned_production = 0.0
         self.planned_investment = 0.0
@@ -303,7 +302,7 @@ class ConsumptionFirm(BaseFirm):
         self.capital_avg = self.nu * self.capital_avg + (1 - self.nu) * required_k_last
 
 
-        # 2. Check if firm is allowed to invest this period CURRENTLY THE ENGINE DECIDES WHICH FIRMS INVEST WHEN
+        # 2. Check if firm is allowed to invest this period
         if random.random() > self.gamma:
             self.planned_investment = 0
             return

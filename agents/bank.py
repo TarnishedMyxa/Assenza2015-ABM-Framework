@@ -139,7 +139,7 @@ class Bank:
 
         xi_T = (1 - (1 - self.theta) ** (expected_T + 1)) / self.theta
 
-        r=self.mu *( (1+self.r)/xi_T ) - self.theta
+        r=self.mu *( (1+self.r / self.theta)/xi_T ) - self.theta
 
         return max(r, self.r), phi
 

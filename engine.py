@@ -434,6 +434,7 @@ class SimulationEngine:
             "interest_received": 0.0,
             "principal_repaid": 0.0,
             "bad_debt_losses": 0.0,
+            "principal_write_offs": 0.0,
             "bank_dividends": 0.0,
             "c_bankruptcies": 0,
             "k_bankruptcies": 0,
@@ -709,6 +710,7 @@ class SimulationEngine:
             c.wealth -= c.spent_amount
 
         self.bank.intresses=0
+        self.bank.losses = 0
         interest_received = 0.0
         principal_repaid = 0.0
         for f in self.c_firms:
@@ -734,6 +736,11 @@ class SimulationEngine:
                 bankrupt.append(f)
                 self.bank.losses += f.intresses
                 self._step_metrics["bad_debt_losses"] += float(f.intresses)
+                # Principal write-off: bank absorbs debt, recovers firm's remaining liquidity
+                recovery = max(f.liquidity, 0)
+                principal_loss = max(f.debt - recovery, 0)
+                self.bank.losses += principal_loss
+                self._step_metrics["principal_write_offs"] += float(principal_loss)
                 self._step_metrics["c_bankruptcies"] += 1
                 history_for_bank.append((f.lmbda, 1))
             else:
@@ -754,6 +761,11 @@ class SimulationEngine:
                 bankrupt.append(f)
                 self.bank.losses += f.intresses
                 self._step_metrics["bad_debt_losses"] += float(f.intresses)
+                # Principal write-off: bank absorbs debt, recovers firm's remaining liquidity
+                recovery = max(f.liquidity, 0)
+                principal_loss = max(f.debt - recovery, 0)
+                self.bank.losses += principal_loss
+                self._step_metrics["principal_write_offs"] += float(principal_loss)
                 self._step_metrics["k_bankruptcies"] += 1
                 history_for_bank.append((f.lmbda, 1))
             else:
