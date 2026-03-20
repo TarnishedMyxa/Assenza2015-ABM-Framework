@@ -219,6 +219,9 @@ class SimulationEngine:
         self.time_processing={}
         self.to_process_bankruptcies=[]
 
+        self.avg_p_c=2.4
+        self.avg_p_k=2.4
+
         # Setup the world
         self._setup_agents()
 
@@ -343,8 +346,26 @@ class SimulationEngine:
 
         # 1. FIRMS' PLANNING: Decide production and investment
         # Use average prices from previous period for adaptive heuristics
-        self.avg_p_c = np.mean([f.price for f in self.c_firms])
-        self.avg_p_k = np.mean([f.price for f in self.k_firms])
+        #self.avg_p_c = np.mean([f.price for f in self.c_firms])
+        #self.avg_p_k = np.mean([f.price for f in self.k_firms])
+
+        amt=0
+        sls=0
+        for f in self.c_firms:
+            amt+=f.price * f.sales
+            sls+=f.sales
+
+        if sls != 0:
+            self.avg_p_c=amt/sls
+
+        amt = 0
+        sls = 0
+        for f in self.k_firms:
+            amt += f.price * f.sales
+            sls += f.sales
+
+        if sls !=0:
+            self.avg_p_k=amt/sls
 
         self.bank.losses = 0
         for f in self.to_process_bankruptcies:
@@ -561,12 +582,6 @@ class SimulationEngine:
         self.bank.k_history.extend(cleaned)
 
         self.to_process_bankruptcies = bankrupt
-
-        for c in self.capitalists:
-            if c.spent_amount > 0 and c.budget == 0:
-                pass
-
-
 
 def send_config_to_db(db_creds, config):
     cnf={

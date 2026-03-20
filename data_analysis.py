@@ -12,7 +12,7 @@ db_creds = {
     'password': os.getenv("password"),
     'database': os.getenv("database")
 }
-runid="Q2nD53czjdlzN1l"
+runid="J76zZkrfd5U3OHK"
 
 
 firm_data= get_firm_data(db_creds, "C_0", runid)
