@@ -37,6 +37,7 @@ class Bank:
         self.k_model_coefficient = 5
         self.k_model_intercept = -2
 
+
     def estimate_logistic_failure_prob(self):
         """
         Estimates the logistic relationship phi = f(lambda).
@@ -128,15 +129,15 @@ class Bank:
         Rationing based on Equations 8.12 and bank exposure.
         """
         available_credit = (self.zeta * self.equity - phi * current_debt) / phi
-        #available_credit =min(available_credit, self.equity * 0.1)
+        available_credit =min(available_credit, 12000)
 
         return max(0, available_credit)
 
     def dividends(self):
+        self.divs = 0
         if self.intresses - self.losses > 0 and self.equity > 0:
             self.divs = (self.intresses - self.losses) * 0.2
-            return self.divs
-        return 0
+        return self.divs
 
 
 if __name__=="__main__":

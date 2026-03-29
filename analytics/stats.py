@@ -83,12 +83,13 @@ def get_c_price_over_time(db_config):
     return execute_query(db_config, query)
 
 
-def get_unemployment_rate_over_time(db_config):
+def get_unemployment_rate_over_time(db_config, runid):
     query = """
-        SELECT s.run_id, s.step_no, SUM(w.employed)/COUNT(w.worker_id) AS unemployment_rate
+        SELECT s.step_no, SUM(w.employed)/3000 AS unemployment_rate
         FROM steps s LEFT JOIN workers_data w on s.step_id = w.step_id
-        GROUP BY s.run_id, s.step_no
-        WHERE s.run_id = "zgx30YZd3ECh7iZ"
+        WHERE s.run_id = '""" + str(runid) +"""'
+        GROUP BY s.step_no
+        
     """
     return execute_query(db_config, query)
 
@@ -245,3 +246,21 @@ def get_bankrupts(db_config, runid):
     df_bankrupts = pd.DataFrame(bankrupts, columns=['run_id', 'step_no', 'idnum', 'equity', 'debt'])
     return df_bankrupts
 
+
+def total_capital(db_config, runid):
+    query = """
+    SELECT s.run_id, s.step_no, SUM(b.capital) as capital
+    FROM steps s LEFT JOIN c_firms_data b on s.step_id = b.step_id
+    WHERE s.run_id = '""" + str(runid) +"""'
+    GROUP BY s.run_id, s.step_no
+    """
+    return execute_query(db_config, query)
+
+def cap_production(db_config, runid):
+    query = """
+    SELECT s.step_no, SUM(b.production) as K_prod, SUM(b.inventory) as K_inventory
+    FROM steps s LEFT JOIN kf_firms_data b on s.step_id = b.step_id
+    WHERE s.run_id = '""" + str(runid) +"""'
+    GROUP BY s.step_no
+    """
+    return execute_query(db_config, query)

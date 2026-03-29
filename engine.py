@@ -369,7 +369,10 @@ class SimulationEngine:
 
         self.bank.losses = 0
         for f in self.to_process_bankruptcies:
-            f.process_bankruptcy(self.bank, self.avg_p_k)
+            if f.id[0]=="C":
+                f.process_bankruptcy(self.bank, self.avg_p_k, self.avg_p_c)
+            else:
+                f.process_bankruptcy(self.bank, self.avg_p_k, self.avg_p_k)
 
         self.bank.equity += - self.bank.losses
         self.bank.divs=0
@@ -378,8 +381,9 @@ class SimulationEngine:
             cf.sales=0
             cf.update_equity(self.avg_p_c)
             cf.adjust_price_and_output(self.avg_p_c)
-            cf.queue=0
             cf.plan_invest()
+            cf.queue=0
+
 
         for kf in self.k_firms:
             kf.sales=0
@@ -412,7 +416,7 @@ class SimulationEngine:
 
         # 7. ACCOUNTING: Update bank equity, firm dividends, etc.
         #data.append(0)
-        self._perform_accounting([])
+        self._perform_accounting()
 
         self.current_step_end_state = random.getstate()
 
@@ -425,7 +429,7 @@ class SimulationEngine:
             if gap > 0:
                 # Bank sets rate and determines loan amount
                 leverage= firm.calculate_leverage(gap)
-                rate, phi = self.bank.set_interest_rate(leverage)
+                rate, phi = self.bank.set_interest_rate(leverage,firm_type=firm.id[0])
                 loan_granted = self.bank.get_credit_limit(firm.debt, phi )
                 if loan_granted > 0:
                     firm.receive_loan(min(gap, loan_granted), rate)
@@ -452,7 +456,7 @@ class SimulationEngine:
             sampled_demands = demands_cache[firm_indices]
             local_idx = np.argmax(sampled_demands)
             best_f_idx = firm_indices[local_idx]
-            if demands_cache[best_f_idx] > 0:
+            if demands_cache[best_f_idx] >= 1:
                 best_employer = all_firms[best_f_idx]
                 demands_cache[best_f_idx] -= 1
                 best_employer.labour_demand -= 1
@@ -502,9 +506,9 @@ class SimulationEngine:
 
                 firm.liquidity += cost
 
-            if remaining_budget > 0:
-                q_price = firm.price
-                firm.queue += remaining_budget / q_price
+                if remaining_budget > 0:
+                    q_price = firm.price
+                    firm.queue += remaining_budget / q_price
 
 
 
@@ -513,7 +517,7 @@ class SimulationEngine:
         for cf in self.c_firms:
             cf.shop(self.k_firms)
 
-    def _perform_accounting(self, data):
+    def _perform_accounting(self):
         """Handle accounting"""
 
         for h in self.workers :
@@ -558,6 +562,7 @@ class SimulationEngine:
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
+                #if f.debt > 0:
                 history_for_bank.append((f.lmbda, 0))
             f.owner.recalulate_human_wealth()
 
@@ -574,6 +579,7 @@ class SimulationEngine:
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
+                #if f.debt > 0:
                 history_for_bank.append((f.lmbda, 0))
 
             f.owner.recalulate_human_wealth()
