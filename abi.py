@@ -12,7 +12,7 @@ db_creds = {
     'password': os.getenv("password"),
     'database': os.getenv("database")
 }
-runid="QATTKFvYtw9KJkT"
+runid="LEN1fhIJa98iK1i"
 
 
 k_firm_data=get_k_firm_data(db_creds, "K_1", runid)
@@ -20,7 +20,7 @@ headers=[
     'step_no', 'step_id', 'kf_id', 'liquidity', 'price', 'equity', 'debt',
     'profit', 'production', 'sales',"inventory", 'queue', 'expected_demand',
     'intresses', "loans", 'labour_demand', 'staff',
-    'first_step', 'lmbda', 'wage_bill', 'planned_production'
+    'first_step', 'lmbda', 'wage_bill'
 ]
 
 with open('k_firm_data.csv', mode='w', newline='', encoding='utf-8') as file:
@@ -35,7 +35,7 @@ with open('k_firm_data.csv', mode='w', newline='', encoding='utf-8') as file:
     else:
         print("No data found for the specified Run ID and Firm ID.")
 
-capitalist_data= get_capitalist_data(db_creds, "B_201", runid)
+capitalist_data= get_capitalist_data(db_creds, "B_92", runid)
 headers = [
     'step_no', 'steps_id', 'capitalist_id', 'budget', 'wealth',
     'human_wealth',  'spent_amount'
@@ -53,7 +53,7 @@ with open('capitalist_data.csv', mode='w', newline='', encoding='utf-8') as file
         print("No data found for the specified Run ID and Capitalist ID.")
 
 
-firm_data= get_firm_data(db_creds, "C_154", runid)
+firm_data= get_firm_data(db_creds, "C_92", runid)
 headers = [
     'step_no', 'step_id', 'cf_id', 'liquidity', 'price', 'equity', 'debt',
     'profit', 'production', 'sales', 'queue', 'expected_demand',

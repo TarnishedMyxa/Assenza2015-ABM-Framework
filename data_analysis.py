@@ -11,7 +11,7 @@ db_creds = {
     'password': os.getenv("password"),
     'database': os.getenv("database")
 }
-runid="koQXfNPB8Beah7w"
+runid="RB3FVyzyiSyMrcr"
 
 
 firm_data= get_firm_data(db_creds, "C_0", runid)
@@ -148,3 +148,16 @@ with open('cap_prod.csv', mode='w', newline='', encoding='utf-8') as file:
     writer.writerow(headers)
     if capital_prod:
         writer.writerows(capital_prod)
+
+demandd=demand(db_creds,runid)
+demandd.to_csv('demand_data.csv', index=False)
+
+ssuply=supply(db_creds,runid)
+headers = [
+    'step_no', 'qty', 'e_demand'
+]
+with open('supply.csv', mode='w', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    writer.writerow(headers)
+    if ssuply:
+        writer.writerows(ssuply)

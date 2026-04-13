@@ -11,7 +11,7 @@ class Household:
                  cons_propensity=0.05):
         self.id = agent_id
         self.wealth = initial_wealth  # D_c (Financial Wealth/Deposits)
-        self.human_wealth = 0.05  # Y*_c (Permanent Income proxy)
+        self.human_wealth = 0.5  # Y*_c (Permanent Income proxy)
         self.spent_amount = 0.0
 
         # Parameters
@@ -24,7 +24,7 @@ class Household:
         Calculates consumption budget based on permanent income and financial wealth.
         Budget = Y*_c,t + χ * D_c,t
         """
-        if self.wealth <=0:
+        if self.wealth <=-1:
             self.budget=0
             return 0
 
@@ -66,6 +66,7 @@ class Capitalist(Household):
         self.owned_firm = owned_firm
         self.search_count=search_count
         self.income=0.0
+        self.debt=0
 
     def recalulate_human_wealth(self):
 

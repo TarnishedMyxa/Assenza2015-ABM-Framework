@@ -67,10 +67,20 @@ class runManager:
             "k_firms": [],
             "capitalists": []
         }
+        numbero_last=""
         for _ in range(steps):
+
+            numbero=str(int(_/steps*100))
+            if numbero!=numbero_last:
+                numbero_last=numbero
+                print(numbero + "% ready")
+
             time_processing=run.run_step()
+
             if self.db_creds is not None:
                 self.save_run_data(run)
+            if run.bank.equity < 0:
+                break
 
 
     def save_run_data(self, run):
@@ -219,7 +229,7 @@ class SimulationEngine:
         self.time_processing={}
         self.to_process_bankruptcies=[]
 
-        self.avg_p_c=2.4
+        self.avg_p_c=10
         self.avg_p_k=2.4
 
         # Setup the world
@@ -284,11 +294,11 @@ class SimulationEngine:
             cf.rho = self.config['firms']['quantity_adjustment']
             cf.eta_max = self.config['firms']['price_adjustment_max']
             cf.omega = self.config['firms']['c_sector']['desired_utilization']
-            cf.gamma = self.config['firms']['c_sector']['investment_probability']
+            #cf.gamma = self.config['firms']['c_sector']['investment_probability']
             cf.delta = self.config['firms']['c_sector']['capital_depreciation']
             cf.kappa = self.config['firms']['c_sector']['capital_productivity']
             cf.initial_production = self.config['firms']['c_sector']['initial_production']
-            cf.expected_demand = cf.initial_production
+            cf.expected_demand = cf.initial_production + 30
             cf.wage=self.wage_rate
             self.c_firms.append(cf)
             total_money+=self.config['firms']['initial_liquidity']
@@ -346,14 +356,17 @@ class SimulationEngine:
 
         # 1. FIRMS' PLANNING: Decide production and investment
         # Use average prices from previous period for adaptive heuristics
-        #self.avg_p_c = np.mean([f.price for f in self.c_firms])
-        #self.avg_p_k = np.mean([f.price for f in self.k_firms])
+        self.avg_p_c = np.mean([f.price for f in self.c_firms])
+        self.avg_p_k = np.mean([f.price for f in self.k_firms])
 
+
+        """
         amt=0
         sls=0
         for f in self.c_firms:
             amt+=f.price * f.sales
             sls+=f.sales
+            #f.fire_all()
 
         if sls != 0:
             self.avg_p_c=amt/sls
@@ -363,9 +376,12 @@ class SimulationEngine:
         for f in self.k_firms:
             amt += f.price * f.sales
             sls += f.sales
+            #f.fire_all()
 
         if sls !=0:
             self.avg_p_k=amt/sls
+            
+        """
 
         self.bank.losses = 0
         for f in self.to_process_bankruptcies:
@@ -377,19 +393,31 @@ class SimulationEngine:
         self.bank.equity += - self.bank.losses
         self.bank.divs=0
 
+
+        if self.bank.equity > 6000:
+            self.bank.additional_markup -= 0.0001 * (self.bank.equity - 6000)  +0.001
+            self.bank.equity = 6000
+
+        elif self.bank.equity < 1500:
+            self.bank.additional_markup += 0.0001 * (1500 - self.bank.equity) + 0.001
+            self.bank.equity = 1500
+
+
         for cf in self.c_firms:
-            cf.sales=0
             cf.update_equity(self.avg_p_c)
             cf.adjust_price_and_output(self.avg_p_c)
+            cf.sales = 0
             cf.plan_invest()
             cf.queue=0
+            cf.consolidate_loans()
 
 
         for kf in self.k_firms:
-            kf.sales=0
             kf.update_equity(self.avg_p_k)
             kf.adjust_price_and_output(self.avg_p_k)
+            kf.sales = 0
             kf.queue=0
+            kf.consolidate_loans()
 
         # Banks estimate bankruptcy predictions for leverage levels and prices
         self.bank.estimate_logistic_failure_prob()
@@ -420,6 +448,7 @@ class SimulationEngine:
 
         self.current_step_end_state = random.getstate()
 
+
         return self.time_processing
 
     def _resolve_credit_market(self, avg_p_k):
@@ -432,7 +461,10 @@ class SimulationEngine:
                 rate, phi = self.bank.set_interest_rate(leverage,firm_type=firm.id[0])
                 loan_granted = self.bank.get_credit_limit(firm.debt, phi )
                 if loan_granted > 0:
-                    firm.receive_loan(min(gap, loan_granted), rate)
+                    firm.receive_loan(max(min(gap, loan_granted), -firm.liquidity), rate)
+                elif firm.liquidity < 0:
+                    firm.receive_loan(-firm.liquidity, rate)
+                continue
             firm.calculate_leverage(0)
 
     def _resolve_labor_market(self):
@@ -456,7 +488,7 @@ class SimulationEngine:
             sampled_demands = demands_cache[firm_indices]
             local_idx = np.argmax(sampled_demands)
             best_f_idx = firm_indices[local_idx]
-            if demands_cache[best_f_idx] >= 1:
+            if demands_cache[best_f_idx] >= 0.01:
                 best_employer = all_firms[best_f_idx]
                 demands_cache[best_f_idx] -= 1
                 best_employer.labour_demand -= 1
@@ -491,6 +523,8 @@ class SimulationEngine:
                 firm = sorted_c_firms[idx]
 
                 if firm.inventory <= 0:
+                    if remaining_budget > 0:
+                        firm.queue += remaining_budget / firm.price
                     continue
 
                 price = firm.price
@@ -506,10 +540,8 @@ class SimulationEngine:
 
                 firm.liquidity += cost
 
-                if remaining_budget > 0:
-                    q_price = firm.price
-                    firm.queue += remaining_budget / q_price
-
+            #if remaining_budget > 0:
+                #firm.queue += remaining_budget / firm.price
 
 
     def _resolve_capital_market(self):
@@ -559,14 +591,18 @@ class SimulationEngine:
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
-                history_for_bank.append((f.lmbda, 1))
+                weight= abs(f.intresses - f.debt + f.liquidity)
+                history_for_bank.append((f.lmbda, 1, weight))
             else:
                 f.dividends()
-                #if f.debt > 0:
-                history_for_bank.append((f.lmbda, 0))
+                weight = f.intresses
+                history_for_bank.append((f.lmbda, 0, weight))
+
+            #history_for_bank.append((1, 1))
             f.owner.recalulate_human_wealth()
 
-        cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
+        #cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
+        cleaned=history_for_bank
         self.bank.c_history.extend(cleaned)
 
         history_for_bank = []
@@ -576,15 +612,19 @@ class SimulationEngine:
 
             if f.check_bankruptcy():
                 bankrupt.append(f)
-                history_for_bank.append((f.lmbda, 1))
+                weight = abs(f.intresses - f.debt + f.liquidity)
+                history_for_bank.append((f.lmbda, 1, weight))
             else:
                 f.dividends()
-                #if f.debt > 0:
-                history_for_bank.append((f.lmbda, 0))
+                weight = f.intresses
+                history_for_bank.append((f.lmbda, 0, weight))
+
+            #history_for_bank.append((1, 1))
 
             f.owner.recalulate_human_wealth()
 
-        cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
+        #cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
+        cleaned = history_for_bank
         self.bank.k_history.extend(cleaned)
 
         self.to_process_bankruptcies = bankrupt

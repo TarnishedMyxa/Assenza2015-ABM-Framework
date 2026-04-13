@@ -7,7 +7,7 @@ from itertools import chain
 
 class Bank:
     def __init__(self, initial_equity, r_policy=0.01, markup=1.1,
-                 zeta=0.002, theta=0.05, window_c=1000, window_k=1000):
+                 zeta=0.002, theta=0.05, window_c=600, window_k=120):
         """
         r_policy: The risk-free rate 'r' (instrument of monetary policy)
         markup: 'mu' (arbitrage multiplier > 1)
@@ -31,11 +31,13 @@ class Bank:
         self.c_model = None
         self.k_model = None
 
-        self.c_model_coefficient = 5
-        self.c_model_intercept = -2
+        self.c_model_coefficient = 10
+        self.c_model_intercept = -10
 
-        self.k_model_coefficient = 5
-        self.k_model_intercept = -2
+        self.k_model_coefficient = 10
+        self.k_model_intercept = -10
+
+        self.additional_markup=0.001
 
 
     def estimate_logistic_failure_prob(self):
@@ -47,9 +49,9 @@ class Bank:
 
         """
         if self.k_model is None:
-            self.k_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=100)
+            self.k_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=25)
         if self.c_model is None:
-            self.c_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=100)
+            self.c_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=25)
 
         def update_and_fit(model, history, firm_type):
             if not history or len(history) < 50:
@@ -59,10 +61,11 @@ class Bank:
 
             X = data[:, 0].reshape(-1, 1)
             y = data[:, 1]
+            weights=data[:, 2]
 
             y_min, y_max = y.min(), y.max()
             if y_min != y_max:
-                model.fit(X, y)
+                model.fit(X, y, sample_weight=weights)
 
                 coef = model.coef_[0][0]
                 intercept = model.intercept_[0]
@@ -84,7 +87,7 @@ class Bank:
 
         if model is None:
             if self.c_model_coefficient is None or self.c_model_intercept is None:
-                return 0.1  # Default  risk before C model is trained
+                return 0.03  # Default  risk before C model is trained
             # Use C model parameters to calculate probability
             z = self.c_model_coefficient * leverage + self.c_model_intercept
             phi = 1 / (1 + np.exp(-z))
@@ -92,14 +95,14 @@ class Bank:
 
         if firm_type == 'C':
             if self.c_model_coefficient is None or self.c_model_intercept is None:
-                return 0.1  # Default  risk before C model is trained
+                return 0.03  # Default  risk before C model is trained
             # Use C model parameters to calculate probability
             z = self.c_model_coefficient * leverage + self.c_model_intercept
             phi = 1 / (1 + np.exp(-z))
             return phi
         else:
             if self.k_model_coefficient is None or self.k_model_intercept is None:
-                return 0.1  # Default risk before K model is trained
+                return 0.03  # Default risk before K model is trained
             # Use K model parameters to calculate probability
             z = self.k_model_coefficient * leverage + self.k_model_intercept
             phi = 1 / (1 + np.exp(-z))
@@ -120,7 +123,7 @@ class Bank:
 
         xi_T = (1 - (1 - self.theta) ** (expected_T + 1)) / self.theta
 
-        r=self.mu *( (1+self.r/self.theta)/xi_T  - self.theta)
+        r=self.mu *( (1+self.r/self.theta)/xi_T)  - self.theta  + self.additional_markup
 
         return max(r, self.r), phi
 

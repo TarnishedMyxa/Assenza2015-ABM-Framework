@@ -227,24 +227,30 @@ def get_k_sales(db_config, runid):
 
 def get_bankrupts(db_config, runid):
     query = """
-    SELECT s.run_id, s.step_no, b.cf_id as idnum, b.equity, b.debt
+    SELECT s.run_id, s.step_no, b.cf_id as idnum, b.equity, b.debt, b.liquidity
     FROM steps s LEFT JOIN c_firms_data b on s.step_id = b.step_id
     WHERE s.run_id = '""" + str(runid) +"""'
     AND b.equity < 0
-    GROUP BY s.run_id, s.step_no
-    
-    UNION ALL
-    
-    SELECT s.run_id, s.step_no, b.kf_id as idnum, b.equity, b.debt
+    """
+    c=execute_query(db_config, query)
+    query ="""
+    SELECT s.run_id, s.step_no, b.kf_id as idnum, b.equity, b.debt, b.liquidity
     FROM steps s LEFT JOIN kf_firms_data b on s.step_id = b.step_id
     WHERE s.run_id = '""" + str(runid) +"""'
     AND b.equity < 0
-    GROUP BY s.run_id, s.step_no
     
     """
-    bankrupts= execute_query(db_config, query)
-    df_bankrupts = pd.DataFrame(bankrupts, columns=['run_id', 'step_no', 'idnum', 'equity', 'debt'])
-    return df_bankrupts
+    w= execute_query(db_config, query)
+    dw = pd.DataFrame(w, columns=['run_id', 'step_no', 'idnum', 'equity', 'debt', 'liquidity'])
+    dc = pd.DataFrame(c, columns=['run_id', 'step_no', 'idnum', 'equity', 'debt', 'liquidity'])
+
+    dataframes = [dw, dc]
+
+    df_final = pd.concat(dataframes, ignore_index=True)
+
+    df_final = df_final.fillna(0)
+
+    return df_final
 
 
 def total_capital(db_config, runid):
@@ -260,6 +266,43 @@ def cap_production(db_config, runid):
     query = """
     SELECT s.step_no, SUM(b.production) as K_prod, SUM(b.inventory) as K_inventory
     FROM steps s LEFT JOIN kf_firms_data b on s.step_id = b.step_id
+    WHERE s.run_id = '""" + str(runid) +"""'
+    GROUP BY s.step_no
+    """
+    return execute_query(db_config, query)
+
+def demand(db_config, runid):
+    query = """
+    SELECT s.run_id, s.step_no, SUM(w.budget) as w_budget, SUM(w.spent_amount) as w_spent
+    FROM steps s LEFT JOIN workers_data w on s.step_id = w.step_id
+    WHERE s.run_id = '""" + str(runid) +"""'
+    GROUP BY s.run_id, s.step_no
+    """
+    w=execute_query(db_config, query)
+
+    query = """
+    SELECT s.run_id, s.step_no, SUM(c.budget) as c_budget, SUM(c.spent_amount) as c_spent
+    FROM steps s LEFT JOIN capitalists_data c on s.step_id = c.steps_id
+    WHERE s.run_id = '""" + str(runid) +"""'
+    GROUP BY s.run_id, s.step_no
+    """
+    c=execute_query(db_config, query)
+
+    dw = pd.DataFrame(w, columns=['run_id', 'step_no', 'w_budget', 'w_spent'])
+    dc = pd.DataFrame(c, columns=['run_id', 'step_no', 'c_budget', 'c_spent' ])
+
+    dataframes = [dw, dc]
+
+    df_final = reduce(lambda left, right: pd.merge(left, right, on=['run_id', 'step_no'], how='outer'), dataframes)
+
+    df_final = df_final.fillna(0)
+
+    return df_final
+
+def supply(db_config, runid):
+    query = """
+    SELECT s.step_no, SUM(b.production) as qty, SUM(b.expected_demand) as e_demand
+    FROM steps s LEFT JOIN c_firms_data b on s.step_id = b.step_id
     WHERE s.run_id = '""" + str(runid) +"""'
     GROUP BY s.step_no
     """
