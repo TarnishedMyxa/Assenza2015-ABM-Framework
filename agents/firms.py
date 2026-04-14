@@ -311,11 +311,11 @@ class ConsumptionFirm(BaseFirm):
                 break
 
             # Firm checks inventory and sells what it can
-            #max_to_buy=self.liquidity/firm.price
-            #max_to_buy = max(0, max_to_buy)
+            max_to_buy=self.liquidity/firm.price
+            max_to_buy = max(0, max_to_buy)
 
-            actual_qty = firm.sell(to_buy)
-            #actual_qty = firm.sell(min(to_buy, max_to_buy))
+            #actual_qty = firm.sell(to_buy)
+            actual_qty = firm.sell(min(to_buy, max_to_buy))
             cost = actual_qty * firm.price
 
             to_buy -= actual_qty
@@ -420,7 +420,7 @@ class CapitalFirm(BaseFirm):
     def get_financing_gap(self, k_goods_price):
         """K-Firms only borrow for working capital (wages)."""
         labor_required = self.planned_production / self.alpha
-        self.wage_bill = math.floor(labor_required) * self.wage
+        self.wage_bill = math.ceil(labor_required) * self.wage
 
         return max(0, self.wage_bill - self.liquidity)
 

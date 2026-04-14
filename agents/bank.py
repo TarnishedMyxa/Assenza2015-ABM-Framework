@@ -7,7 +7,7 @@ from itertools import chain
 
 class Bank:
     def __init__(self, initial_equity, r_policy=0.01, markup=1.1,
-                 zeta=0.002, theta=0.05, window_c=1000, window_k=1000):
+                 zeta=0.002, theta=0.05, window_c=500, window_k=250):
         """
         r_policy: The risk-free rate 'r' (instrument of monetary policy)
         markup: 'mu' (arbitrage multiplier > 1)
@@ -46,9 +46,9 @@ class Bank:
 
         """
         if self.k_model is None:
-            self.k_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=100)
+            self.k_model = LogisticRegression(solver='lbfgs',  max_iter=100)
         if self.c_model is None:
-            self.c_model = LogisticRegression(solver='lbfgs', warm_start=True, max_iter=100)
+            self.c_model = LogisticRegression(solver='lbfgs',  max_iter=100)
 
         def update_and_fit(model, history, firm_type):
             if not history or len(history) < 50:

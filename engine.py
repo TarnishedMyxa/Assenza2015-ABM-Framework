@@ -68,6 +68,7 @@ class runManager:
             "capitalists": []
         }
         numbero_last=""
+        timer=15
         for _ in range(steps):
 
             numbero=str(int(_/steps*100))
@@ -80,7 +81,11 @@ class runManager:
             if self.db_creds is not None:
                 self.save_run_data(run)
             if run.bank.equity < 0:
-                break
+                timer-=1
+                if timer ==0:
+                    break
+            else:
+                timer=15
 
 
     def save_run_data(self, run):
@@ -426,9 +431,10 @@ class SimulationEngine:
                 rate, phi = self.bank.set_interest_rate(leverage,firm_type=firm.id[0])
                 loan_granted = self.bank.get_credit_limit(firm.debt, phi )
                 if loan_granted > 0:
-                    firm.receive_loan(max(min(gap, loan_granted), -firm.liquidity), rate)
-                elif firm.liquidity < 0:
-                    firm.receive_loan(-firm.liquidity, rate)
+                    firm.receive_loan(min(gap, loan_granted), rate)
+                    #firm.receive_loan(max(min(gap, loan_granted), -firm.liquidity), rate)
+                #elif firm.liquidity < 0:
+                    #firm.receive_loan(-firm.liquidity, rate)
                 continue
             firm.calculate_leverage(0)
 
