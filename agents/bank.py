@@ -31,11 +31,11 @@ class Bank:
         self.c_model = None
         self.k_model = None
 
-        self.c_model_coefficient = 5
-        self.c_model_intercept = -2
+        self.c_model_coefficient = 10
+        self.c_model_intercept = -10
 
-        self.k_model_coefficient = 5
-        self.k_model_intercept = -2
+        self.k_model_coefficient = 10
+        self.k_model_intercept = -10
 
     def estimate_logistic_failure_prob(self):
         """

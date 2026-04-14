@@ -146,9 +146,7 @@ class BaseFirm:
         self.lmbda=min(leverage, 0.9999)
         return self.lmbda
 
-    def process_bankruptcy(self, bank, k_price):
-        self.liquidity += self.owner.wealth
-        self.owner.wealth = 0
+    def process_bankruptcy(self, bank, k_price, avg_price):
         if self.liquidity >= self.debt:
             self.liquidity -= self.debt
         else:
@@ -265,8 +263,9 @@ class ConsumptionFirm(BaseFirm):
 
         # 3. Calculate Investment
         self.desired_capital = self.capital_avg / self.desired_utilization
-        total_inv = self.desired_capital + replacement - self.capital
         replacement = (self.delta * self.desired_capital) / self.gamma
+        total_inv = self.desired_capital + replacement - self.capital
+
 
         # self.planned_investment = total_inv    # if disinvestment is allowed
         self.planned_investment = max(0, total_inv)
@@ -393,7 +392,7 @@ class CapitalFirm(BaseFirm):
         if self.inventory > 0 and self.price > market_avg_price:
             self.price *= (1 - eta)
             self.price =max(self.price, 1)
-        elif self.inventory - self.queue<= 0 and self.price <= market_avg_price and self.timeout < 0:
+        elif self.inventory - self.queue<= 0 and self.price <= market_avg_price:
             self.price *= (1 + eta)
             #self.price =min(self.price, 20)
 
