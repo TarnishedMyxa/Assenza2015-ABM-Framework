@@ -11,7 +11,7 @@ class Household:
                  cons_propensity=0.05):
         self.id = agent_id
         self.wealth = initial_wealth  # D_c (Financial Wealth/Deposits)
-        self.human_wealth = 0.05  # Y*_c (Permanent Income proxy)
+        self.human_wealth = 0.5  # Y*_c (Permanent Income proxy)
         self.spent_amount = 0.0
 
         # Parameters

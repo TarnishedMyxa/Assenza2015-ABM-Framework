@@ -1,7 +1,6 @@
 from analytics.stats import *
 import os
 from dotenv import load_dotenv
-import matplotlib.pyplot as plt
 import csv
 
 load_dotenv()
@@ -12,7 +11,7 @@ db_creds = {
     'password': os.getenv("password"),
     'database': os.getenv("database")
 }
-runid="gm7OSjRfMnJoveM"
+runid="RB3FVyzyiSyMrcr"
 
 
 firm_data= get_firm_data(db_creds, "C_0", runid)
@@ -53,7 +52,7 @@ with open('k_firm_data.csv', mode='w', newline='', encoding='utf-8') as file:
     writer.writerow(headers)
 
     # Write all data rows
-    if firm_data:
+    if k_firm_data:
         writer.writerows(k_firm_data)
     else:
         print("No data found for the specified Run ID and Firm ID.")
@@ -117,5 +116,48 @@ c_sales.to_csv('c_sales_data.csv', index=False)
 k_sales=get_k_sales(db_creds,runid)
 k_sales.to_csv('k_sales_data.csv', index=False)
 
+bankrupts=get_bankrupts(db_creds,runid)
+bankrupts.to_csv('bankrupts_data.csv', index=False)
 
+capital=total_capital(db_creds,runid)
+headers = [
+    'runid', 'step_no', 'capital'
+]
+with open('capital_data.csv', mode='w', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    writer.writerow(headers)
+    if capital:
+        writer.writerows(capital)
 
+unempl= get_unemployment_rate_over_time(db_creds,runid)
+headers = [
+    'step_no', 'unemployment_rate'
+]
+with open('unemploymnet.csv', mode='w', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    writer.writerow(headers)
+    if unempl:
+        writer.writerows(unempl)
+
+capital_prod=cap_production(db_creds,runid)
+headers = [
+    'step_no', 'K_prod', 'K_inventory'
+]
+with open('cap_prod.csv', mode='w', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    writer.writerow(headers)
+    if capital_prod:
+        writer.writerows(capital_prod)
+
+demandd=demand(db_creds,runid)
+demandd.to_csv('demand_data.csv', index=False)
+
+ssuply=supply(db_creds,runid)
+headers = [
+    'step_no', 'qty', 'e_demand'
+]
+with open('supply.csv', mode='w', newline='', encoding='utf-8') as file:
+    writer = csv.writer(file)
+    writer.writerow(headers)
+    if ssuply:
+        writer.writerows(ssuply)
