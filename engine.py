@@ -395,6 +395,7 @@ class SimulationEngine:
 
         # 1. FIRMS' PLANNING: Decide production
         for f in self.c_firms + self.k_firms:
+            f.fire_all()
             f.calculate_labor_demand()
 
         # 2. CREDIT MARKET: Firms calculate financing gaps and request loans
@@ -448,6 +449,12 @@ class SimulationEngine:
         np.random.shuffle(unemployed)
 
         all_firms = self.c_firms + self.k_firms
+        for f in all_firms:
+            if f.liquidity <=0:
+                f.labour_demand = 0
+            if f.liquidity <= math.ceil(f.labour_demand):
+                f.labour_demand = math.floor(f.liquidity)
+
         num_firms = len(all_firms)
 
         demands_cache = np.array([f.labour_demand for f in all_firms], dtype=np.int32)

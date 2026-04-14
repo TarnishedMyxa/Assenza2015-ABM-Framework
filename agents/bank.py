@@ -7,7 +7,7 @@ from itertools import chain
 
 class Bank:
     def __init__(self, initial_equity, r_policy=0.01, markup=1.1,
-                 zeta=0.002, theta=0.05, window_c=500, window_k=250):
+                 zeta=0.002, theta=0.05, window_c=2000, window_k=1000):
         """
         r_policy: The risk-free rate 'r' (instrument of monetary policy)
         markup: 'mu' (arbitrage multiplier > 1)
@@ -36,6 +36,8 @@ class Bank:
 
         self.k_model_coefficient = 10
         self.k_model_intercept = -10
+
+        self.additional_markup = 0
 
     def estimate_logistic_failure_prob(self):
         """
@@ -119,7 +121,18 @@ class Bank:
 
         xi_T = (1 - (1 - self.theta) ** (expected_T + 1)) / self.theta
 
-        r=self.mu *( (1+self.r/self.theta)/xi_T  - self.theta)
+        """ 
+        if self.equity <= 500:
+            self.additional_markup=0.06
+        elif self.equity <= 1000:
+            self.additional_markup=0.04
+        elif self.equity <= 1500:
+            self.additional_markup=0.02
+        else:
+            self.additional_markup=0.0
+        """
+
+        r=self.mu *( (1+self.r/self.theta)/xi_T)  - self.theta + self.additional_markup
 
         return max(r, self.r), phi
 
@@ -133,7 +146,7 @@ class Bank:
         return max(0, available_credit)
 
     def dividends(self):
-        if self.intresses - self.losses > 0 and self.equity > 0:
+        if self.intresses - self.losses > 0 and self.equity > 3000:
             self.divs = (self.intresses - self.losses) * 0.2
             return self.divs
         return 0
