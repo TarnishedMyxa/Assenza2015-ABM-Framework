@@ -294,6 +294,8 @@ class ConsumptionFirm(BaseFirm):
         if self.liquidity <= 0:
             return
 
+        max_budget=max(self.liquidity-len(self.staff),0)
+
         # 1. Search: Select Zk random firms
         # "visits Zk randomly selected firms"
         potential_sellers = random.sample(k_firms, k=self.search_count)
@@ -303,7 +305,7 @@ class ConsumptionFirm(BaseFirm):
         potential_sellers.sort(key=lambda f: f.price)
 
         costs=0
-        to_buy = self.planned_investment
+        to_buy = min(self.planned_investment, max_budget)
 
         # 3. Buy: Try to fulfill demand starting from cheapest
         for firm in potential_sellers:
@@ -391,7 +393,8 @@ class CapitalFirm(BaseFirm):
 
         if self.inventory > 0 and self.price > market_avg_price:
             self.price *= (1 - eta)
-            self.price =max(self.price, 1)
+            if self.inventory <= 0.1:
+                self.price =max(self.price, 2.1)
         elif self.inventory - self.queue<= 0 and self.price <= market_avg_price:
             self.price *= (1 + eta)
             #self.price =min(self.price, 20)
