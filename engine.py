@@ -47,13 +47,13 @@ class runManager:
                 "config": self.config["config_id"],
                 "run_id": runid,
                 "name": name,
-                "version": "1.0",
+                "version": "0.9",
                 "start_seed": start_seed
             }
             send_run_data(self.db_creds, run_data)
 
         run=SimulationEngine(self.config, name=name, start_seed=start_seed, runid=runid)
-        if "config_id" in self.config:
+        if "config_id" in self.config and not None:
             populate_run_data(self.db_creds, run)
 
         return run
@@ -85,7 +85,7 @@ class runManager:
                 if timer ==0:
                     break
             else:
-                timer=15
+                timer=45
 
 
     def save_run_data(self, run):
@@ -102,8 +102,8 @@ class runManager:
             "step_id": run.current_step_id,
             "equity": run.bank.equity,
             "r": run.bank.r,
-            "c_history": str(run.bank.c_history),   # proper serialization for later
-            "k_history": str(run.bank.k_history),
+            "c_history": "", #str(run.bank.c_history),   # proper serialization for later
+            "k_history": "", #str(run.bank.k_history),
             "c_coef": run.bank.c_model_coefficient if run.bank.c_model_coefficient is not None else -1,
             "c_intercept": run.bank.c_model_intercept if run.bank.c_model_intercept is not None else -1,
             "k_coef": run.bank.k_model_coefficient if run.bank.k_model_coefficient is not None else -1,
@@ -199,7 +199,7 @@ class runManager:
         self.runs_to_send["c_firms"].extend(c_firms)
         self.runs_to_send["k_firms"].extend(k_firms)
         self.runs_to_send["capitalists"].extend(capitalists)
-        if len(self.runs_to_send["step_data"])>=10:  # batch size of 10 steps before sending to DB
+        if len(self.runs_to_send["step_data"])>=40:
             send_run_steps_data(self.db_creds, self.runs_to_send)
             self.runs_to_send={
                 "step_data": [],
@@ -234,8 +234,8 @@ class SimulationEngine:
         self.time_processing={}
         self.to_process_bankruptcies=[]
 
-        self.avg_p_c=10
-        self.avg_p_k=2.4
+        self.avg_p_c=6
+        self.avg_p_k=4
 
         # Setup the world
         self._setup_agents()
@@ -361,8 +361,29 @@ class SimulationEngine:
 
         # 1. FIRMS' PLANNING: Decide production and investment
         # Use average prices from previous period for adaptive heuristics
-        self.avg_p_c = np.mean([f.price for f in self.c_firms])
-        self.avg_p_k = np.mean([f.price for f in self.k_firms])
+        #self.avg_p_c = np.mean([f.price for f in self.c_firms])
+        #self.avg_p_k = np.mean([f.price for f in self.k_firms])
+
+        """ """
+        amt=0
+        sls=0
+        for f in self.c_firms:
+            amt+=f.price * f.sales
+            sls+=f.sales
+            #f.fire_all()
+
+        if sls != 0:
+            self.avg_p_c=amt/sls
+
+        amt = 0
+        sls = 0
+        for f in self.k_firms:
+            amt += f.price * f.sales
+            sls += f.sales
+            #f.fire_all()
+
+        if sls !=0:
+            self.avg_p_k=amt/sls
 
         self.bank.losses = 0
         for f in self.to_process_bankruptcies:
@@ -393,9 +414,20 @@ class SimulationEngine:
         # Banks estimate bankruptcy predictions for leverage levels and prices
         self.bank.estimate_logistic_failure_prob()
 
+        """
+        if self.bank.equity <= 500:
+            self.bank.additional_markup = 0.06
+        elif self.bank.equity <= 1500:
+            self.bank.additional_markup = 0.04
+        elif self.bank.equity <= 2000:
+            self.bank.additional_markup = 0.02
+        else:
+            self.bank.additional_markup = 0.0
+        """
+
         # 1. FIRMS' PLANNING: Decide production
         for f in self.c_firms + self.k_firms:
-            f.fire_all()
+            #f.fire_all()
             f.calculate_labor_demand()
 
         # 2. CREDIT MARKET: Firms calculate financing gaps and request loans
@@ -442,18 +474,23 @@ class SimulationEngine:
     def _resolve_labor_market(self):
         """Matching unemployed workers to firms (Ze parameter)."""
 
+        all_firms = self.c_firms + self.k_firms
+        for f in all_firms:
+            cstaff = len(f.staff)
+            if f.liquidity <= 0:
+                f.labour_demand = 0
+                f.fire_all()
+            elif f.liquidity <= cstaff:
+                f.labour_demand = 0
+                f.fire_workers(int(cstaff - f.liquidity))
+            elif f.liquidity <= math.ceil(f.labour_demand) + cstaff:
+                f.labour_demand = math.floor(f.liquidity) - cstaff
+
         unemployed = [h for h in self.workers if not h.employed]
         if not unemployed:
             return
 
         np.random.shuffle(unemployed)
-
-        all_firms = self.c_firms + self.k_firms
-        for f in all_firms:
-            if f.liquidity <=0:
-                f.labour_demand = 0
-            if f.liquidity <= math.ceil(f.labour_demand):
-                f.labour_demand = math.floor(f.liquidity)
 
         num_firms = len(all_firms)
 
@@ -574,7 +611,8 @@ class SimulationEngine:
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
-                history_for_bank.append((f.lmbda, 0))
+                if f.debt > 10:
+                    history_for_bank.append((f.lmbda, 0))
             f.owner.recalulate_human_wealth()
 
         #cleaned = [tup for tup in history_for_bank if not math.isnan(tup[0])]
@@ -591,7 +629,8 @@ class SimulationEngine:
                 history_for_bank.append((f.lmbda, 1))
             else:
                 f.dividends()
-                history_for_bank.append((f.lmbda, 0))
+                if f.debt > 10:
+                    history_for_bank.append((f.lmbda, 0))
 
             f.owner.recalulate_human_wealth()
 
@@ -600,10 +639,6 @@ class SimulationEngine:
         self.bank.k_history.extend(cleaned)
 
         self.to_process_bankruptcies = bankrupt
-
-        for c in self.capitalists:
-            if c.spent_amount > 0 and c.budget == 0:
-                pass
 
 
 

@@ -11,7 +11,7 @@ class Household:
                  cons_propensity=0.05):
         self.id = agent_id
         self.wealth = initial_wealth  # D_c (Financial Wealth/Deposits)
-        self.human_wealth = 0.5  # Y*_c (Permanent Income proxy)
+        self.human_wealth = 0.7  # Y*_c (Permanent Income proxy)
         self.spent_amount = 0.0
 
         # Parameters
@@ -76,25 +76,6 @@ class Capitalist(Household):
 
         self.human_wealth =max(0, (self.xi * self.human_wealth) + ((1 - self.xi) * self.income) )
 
-
-
-    def recapitalize_firm(self):
-
-        """
-        If firm equity < 0, the capitalist uses personal wealth to provide equity.
-
-        """
-        if self.owned_firm.equity < 0:
-            # The paper implies the firm is "replaced", effectively reset.
-            # The cost is deducted from the capitalist's wealth.
-            # Assuming recapitalization restores equity to a baseline (e.g., initial liquidity)
-            recap_cost = abs(self.owned_firm.equity) + 1.0  # Ensure positive equity
-
-            # Deduct from personal wealth
-            self.wealth -= recap_cost
-
-            # Reset firm financials handled in Firm class, but triggered here or by engine
-            self.owned_firm.reset_bankruptcy(new_equity=1.0)
 
 if __name__=="__main__":
     pass

@@ -1,6 +1,8 @@
 import pymysql
 import pandas as pd
 from functools import reduce
+import numpy as np
+
 
 
 def execute_query(db_config, query):
@@ -11,7 +13,9 @@ def execute_query(db_config, query):
             user=db_config['user'],
             password=db_config['password'],
             database=db_config['database'],
-            charset='utf8mb4'
+            charset='utf8mb4',
+            connect_timeout=600,  # Wait longer to connect
+            read_timeout=600,  # Wait up to 10 minutes for data
 
         )
 
@@ -90,7 +94,7 @@ def get_c_price_over_time(db_config):
 
 def get_unemployment_rate_over_time(db_config, runid):
     query = """
-        SELECT s.step_no, SUM(w.employed)/3000 AS unemployment_rate
+        SELECT s.step_no, SUM(w.employed)/3000 AS employment_rate
         FROM steps s LEFT JOIN workers_data w on s.step_id = w.step_id
         WHERE s.run_id = '""" + str(runid) + """'
         GROUP BY s.step_no
@@ -109,61 +113,72 @@ def get_bank_data(db_config, runid):
 
 
 def get_total_money_amount(db_config, runid):
-    # get all money workers
-    query = """ 
-    SELECT s.run_id, s.step_no, SUM(w.wealth) as w_m
-    FROM steps s LEFT JOIN workers_data w on s.step_id = w.step_id
-    WHERE s.run_id = '""" + str(runid) + """'
-    GROUP BY s.run_id, s.step_no
-    """
-    w_m = execute_query(db_config, query)
+    # 1. Get the step mapping for this run
+    map_query = f"SELECT step_id, step_no, run_id FROM steps WHERE run_id = '{runid}' ORDER BY step_no"
+    df_steps = pd.DataFrame(execute_query(db_config, map_query),
+                            columns=['step_id', 'step_no', 'run_id'])
 
-    # get all capitalist money
-    query = """
-    SELECT s.run_id, s.step_no, SUM(c.wealth) as c_m
-    FROM steps s LEFT JOIN capitalists_data c on s.step_id = c.steps_id
-    WHERE s.run_id = '""" + str(runid) + """'
-    GROUP BY s.run_id, s.step_no
-    """
-    c_m = execute_query(db_config, query)
+    step_ids = df_steps['step_id'].tolist()
 
-    # get all money from c firms
-    query = """
-    SELECT s.run_id, s.step_no, SUM(cf.liquidity) as cf_m, SUM(cf.debt) as cf_d
-    FROM steps s LEFT JOIN c_firms_data cf on s.step_id = cf.step_id
-    WHERE s.run_id = '""" + str(runid) + """'
-    GROUP BY s.run_id, s.step_no
-    """
-    cf_m = execute_query(db_config, query)
+    # 2. Define a function to fetch data in small batches
+    def fetch_in_chunks(table, sum_cols, step_col='step_id', chunk_size=50):
+        all_results = []
+        # Split step_ids into small batches of 50
+        for i in range(0, len(step_ids), chunk_size):
+            batch = tuple(step_ids[i:i + chunk_size])
+            print(f"  - Table {table}: Processing steps {i} to {i + chunk_size}...")
 
-    # get all money from k firms
-    query = """
-        SELECT s.run_id, s.step_no, SUM(kf.liquidity) as kf_m, SUM(kf.debt) as kf_d
-        FROM steps s LEFT JOIN kf_firms_data kf on s.step_id = kf.step_id
-        WHERE s.run_id = '""" + str(runid) + """'
-        GROUP BY s.run_id, s.step_no
-        """
-    kf_m = execute_query(db_config, query)
+            # Format SUM columns
+            sum_str = ", ".join([f"SUM({c})" for c in sum_cols])
 
-    # bank
-    query = """
-            SELECT s.run_id, s.step_no, b.equity
-            FROM steps s LEFT JOIN bank_data b on s.step_id = b.step_id
-            WHERE s.run_id = '""" + str(runid) + """'
+            query = f"""
+                SELECT {step_col}, {sum_str}
+                FROM {table}
+                WHERE {step_col} IN {batch}
+                GROUP BY {step_col}
             """
-    bank = execute_query(db_config, query)
+            batch_data = execute_query(db_config, query)
+            all_results.extend(batch_data)
 
-    df_w = pd.DataFrame(w_m, columns=['run_id', 'step_no', 'w_m'])
-    df_c = pd.DataFrame(c_m, columns=['run_id', 'step_no', 'c_m'])
-    df_cf = pd.DataFrame(cf_m, columns=['run_id', 'step_no', 'cf_m', 'cf_d'])
-    df_kf = pd.DataFrame(kf_m, columns=['run_id', 'step_no', 'kf_m', 'kf_d'])
-    bank = pd.DataFrame(bank, columns=['run_id', 'step_no', 'equity'])
+        # Flatten column names for DataFrame
+        cols = ['step_id'] + [f"{table}_{c}" for c in sum_cols]
+        return pd.DataFrame(all_results, columns=cols)
 
-    dataframes = [df_w, df_c, df_cf, df_kf, bank]
+    # 3. Execute for each table
+    print(f"Starting Fail-Safe data retrieval for Run {runid}...")
 
-    df_final = reduce(lambda left, right: pd.merge(left, right, on=['run_id', 'step_no'], how='outer'), dataframes)
+    df_w = fetch_in_chunks('workers_data', ['wealth'])
+    df_c = fetch_in_chunks('capitalists_data', ['wealth'], step_col='steps_id')
+    df_cf = fetch_in_chunks('c_firms_data', ['liquidity', 'debt'])
+    df_kf = fetch_in_chunks('kf_firms_data', ['liquidity', 'debt'])
 
+    # Bank data is usually small enough to fetch in one go
+    bank_query = f"SELECT step_id, equity FROM bank_data WHERE step_id IN {tuple(step_ids)}"
+    df_bank = pd.DataFrame(execute_query(db_config, bank_query), columns=['step_id', 'equity'])
+
+    # 4. Merge everything in Pandas
+    # We rename columns to match your original expected names
+    dfs = [df_steps, df_w, df_c, df_cf, df_kf, df_bank]
+    df_final = reduce(lambda left, right: pd.merge(left, right, on='step_id', how='left'), dfs)
+
+    # 5. Final Cleaning
     df_final = df_final.fillna(0)
+
+    # Map back to your original naming convention
+    rename_map = {
+        'workers_data_wealth': 'w_m',
+        'capitalists_data_wealth': 'c_m',
+        'c_firms_data_liquidity': 'cf_m',
+        'c_firms_data_debt': 'cf_d',
+        'kf_firms_data_liquidity': 'kf_m',
+        'kf_firms_data_debt': 'kf_d'
+    }
+    df_final = df_final.rename(columns=rename_map).drop(columns=['step_id'])
+
+    # Force numeric conversion (Fixes the Decimal vs Float issue)
+    numeric_cols = ['w_m', 'c_m', 'cf_m', 'cf_d', 'kf_m', 'kf_d', 'equity']
+    for col in numeric_cols:
+        df_final[col] = pd.to_numeric(df_final[col], errors='coerce').astype(float)
 
     return df_final
 

@@ -132,6 +132,13 @@ class BaseFirm:
             total_loans += l.amount
         return total_loans
 
+    def topay_bank(self):
+        ttl=0
+        for l in self.loans:
+            ttl+=l.rate * l.amount
+            ttl += self.theta * l.amount
+        return ttl
+
     def calculate_leverage(self, gap):
         """Calculates leverage ratio lambda = L + F / (E + L + F)
             L - Debt
@@ -157,7 +164,7 @@ class BaseFirm:
         self.owner.wealth = 0
         self.loans = []
         self.update_equity(k_price)
-        self.price=max(avg_price,0)
+        self.price=max(avg_price,2)
 
 
 class ConsumptionFirm(BaseFirm):
@@ -196,8 +203,10 @@ class ConsumptionFirm(BaseFirm):
         self.planned_investment = 0.0
         self.wage_bill = 0.0
         self.investment_cost = 0.0
-        self.capital_book=self.capital * 2.4
+        self.capital_book=self.capital * 3
         self.desired_capital=15
+
+        self.price=5
 
 
     def adjust_price_and_output(self, market_avg_price):
@@ -251,15 +260,13 @@ class ConsumptionFirm(BaseFirm):
         Calculates Desired Capital and Investment.
         """
         # 1. Update memory of utilized capital (K_avg)
-        required_k_last = (self.production + self.queue ) / (self.kappa )
+        required_k_last = (self.sales + self.queue ) / (self.kappa )
         self.capital_avg = self.nu * self.capital_avg + (1 - self.nu) * required_k_last
-
 
         # 2. Check if firm is allowed to invest this period
         if random.random() > self.gamma:
             self.planned_investment = 0
             return
-
 
         # 3. Calculate Investment
         self.desired_capital = self.capital_avg / self.desired_utilization
@@ -283,7 +290,9 @@ class ConsumptionFirm(BaseFirm):
         self.wage_bill = labor_required * self.wage
         self.investment_cost = self.planned_investment * k_goods_price
 
-        total_needs = self.wage_bill + self.investment_cost
+        tbp=self.topay_bank()
+
+        total_needs = self.wage_bill + self.investment_cost + tbp
         return max(0, total_needs - self.liquidity)
 
     def shop(self, k_firms):
@@ -294,7 +303,7 @@ class ConsumptionFirm(BaseFirm):
         if self.liquidity <= 0:
             return
 
-        max_budget=max(self.liquidity-len(self.staff),0)
+        max_budget=max(self.liquidity-len(self.staff) - self.topay_bank(),0)
 
         # 1. Search: Select Zk random firms
         # "visits Zk randomly selected firms"
@@ -305,15 +314,16 @@ class ConsumptionFirm(BaseFirm):
         potential_sellers.sort(key=lambda f: f.price)
 
         costs=0
-        to_buy = min(self.planned_investment, max_budget)
+        to_buy = self.planned_investment
+        to_spend=max_budget
 
         # 3. Buy: Try to fulfill demand starting from cheapest
         for firm in potential_sellers:
-            if to_buy <= 0:
+            if to_buy <= 0 or to_spend <= 0:
                 break
 
             # Firm checks inventory and sells what it can
-            max_to_buy=self.liquidity/firm.price
+            max_to_buy=to_spend/firm.price
             max_to_buy = max(0, max_to_buy)
 
             #actual_qty = firm.sell(to_buy)
@@ -321,7 +331,8 @@ class ConsumptionFirm(BaseFirm):
             cost = actual_qty * firm.price
 
             to_buy -= actual_qty
-            costs += cost    # in theory here can be implemented FIFO, LIFO, avg cost methods but i will just recalc the book value somewhere else with avg price on the market
+            costs += cost
+            to_spend-= cost
 
             if to_buy > 0:
                 firm.queue += to_buy
@@ -379,6 +390,8 @@ class CapitalFirm(BaseFirm):
         self.theta=theta
         self.delta=delta
 
+        self.price=3
+
         self.wage_bill=0
 
     def adjust_price_and_output(self, market_avg_price):
@@ -390,11 +403,10 @@ class CapitalFirm(BaseFirm):
         self.expected_demand=self.expected_demand + self.rho * (self.sales + self.queue - self.expected_demand)
         self.planned_production = self.expected_demand - self.inventory
 
-
         if self.inventory > 0 and self.price > market_avg_price:
             self.price *= (1 - eta)
-            if self.inventory <= 0.1:
-                self.price =max(self.price, 2.1)
+
+            self.price =max(self.price, 2)
         elif self.inventory - self.queue<= 0 and self.price <= market_avg_price:
             self.price *= (1 + eta)
             #self.price =min(self.price, 20)
@@ -425,7 +437,7 @@ class CapitalFirm(BaseFirm):
         labor_required = self.planned_production / self.alpha
         self.wage_bill = math.ceil(labor_required) * self.wage
 
-        return max(0, self.wage_bill - self.liquidity)
+        return max(0, self.topay_bank() + self.wage_bill - self.liquidity)
 
     def produce(self):
         """Production function Y = alpha * N."""

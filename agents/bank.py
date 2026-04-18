@@ -7,7 +7,7 @@ from itertools import chain
 
 class Bank:
     def __init__(self, initial_equity, r_policy=0.01, markup=1.1,
-                 zeta=0.002, theta=0.05, window_c=2000, window_k=1000):
+                 zeta=0.002, theta=0.05, window_c=10000, window_k=5000):
         """
         r_policy: The risk-free rate 'r' (instrument of monetary policy)
         markup: 'mu' (arbitrage multiplier > 1)
@@ -116,6 +116,15 @@ class Bank:
         phi = self.get_bankruptcy_prob(leverage, firm_type)
 
         # Avoid division by zero: T = 1 / phi (Eq 8.4)
+        """
+        if phi < 0.01 and self.c_model_coefficient != 10:
+            bnkrpt=0
+            for i in self.c_history:
+                if i[1] == 1:
+                    bnkrpt+=1
+            print(bnkrpt/len(self.c_history))
+            pass
+        """
         phi = max(phi, 0.01)
         expected_T = 1 / phi
 
