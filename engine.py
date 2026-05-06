@@ -29,7 +29,7 @@ class runManager:
             self.db_creds=None
             with open(self.settings["yaml_config_path"], "r", encoding="utf-8") as f:
                 self.config = yaml.safe_load(f)
-                print("YAML CONFIG LOADED")
+                #print("YAML CONFIG LOADED")
                 if self.settings["create_new_config_in_db"]:
                     cnf_id = send_config_to_db(self.db_creds, self.config)
                     self.config['config_id'] = cnf_id
@@ -83,9 +83,12 @@ class runManager:
             if run.bank.equity < 0:
                 timer-=1
                 if timer ==0:
+                    return _
                     break
             else:
-                timer=45
+                timer=15
+
+        return steps
 
 
     def save_run_data(self, run):
